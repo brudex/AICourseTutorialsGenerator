@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Penrose Studio</title>
+    <!--
+      SOURCE OF TRUTH KEYWORDS: desktop splash, startup screen, showStartupError,
+        friendly startup message, launch loading copy
+      WHAT:  The window shown while the local studio starts, and the message
+             shown if it cannot start.
+      WHY:   Customers see plain, reassuring words (no databases, ports or
+             migrations). Progress lines rotate so a slow first launch never
+             looks frozen. A failure shows what to do next; the technical
+             reason stays behind "Show details" for support.
+      WHERE: Loaded by the Tauri shell (src-tauri/src/lib.rs), which calls
+             window.showStartupError(reason) on a FAILED line from the runtime.
+    -->
+    <style>
+      :root { color-scheme: dark; --background: #0a0a0a; --foreground: #fafafa; --muted: #a1a1a1; --border: #262626; --primary: #F5C842; --destructive: #f87171; }
+      html, body { height: 100%; margin: 0; background: var(--background); color: var(--foreground); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+      main { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 24px; text-align: center; }
+      .logo { width: 72px; height: 72px; }
+      h1 { margin: 0; font-size: 18px; font-weight: 600; }
+      .spinner { width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite; }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      p { margin: 0; color: var(--muted); max-width: 420px; }
+      #status { color: var(--foreground); transition: opacity 0.3s; }
+      #status.error-title { color: var(--destructive); font-weight: 600; }
+      details { max-width: 460px; color: var(--muted); font-size: 12px; }
+      summary { cursor: pointer; }
+      details pre { white-space: pre-wrap; word-break: break-word; text-align: left; margin: 8px 0 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; }
+    </style>
+  </head>
+  <body>
+    <main id="main">
+      <img class="logo" src="icon.png" alt="" width="72" height="72" />
+      <h1>Penrose Studio</h1>
+      <div class="spinner" id="spinner"></div>
+      <p id="status">Getting your studio ready</p>
+      <p id="hint">The first time can take a minute.</p>
+    </main>
+    <script>
+      /* Rotating progress lines so a long first launch never looks stuck. */
+      const STEPS = ['Getting your studio ready', 'Setting up your workspace', 'Loading your courses', 'Almost there']
+      const status = document.getElementById('status')
+      let step = 0
+      const timer = setInterval(() => {
+        step = Math.min(step + 1, STEPS.length - 1)
+        status.style.opacity = '0'
+        setTimeout(() => {
+          status.textContent = STEPS[step]
+          status.style.opacity = '1'
+        }, 300)
+        if (step === STEPS.length - 1) clearInterval(timer)
+      }, 4000)
+
+      /* Called by the native shell when the local studio fails to start. */
+      window.showStartupError = (reason) => {
+        clearInterval(timer)
+        document.getElementById('spinner').remove()
+        const alreadyOpen = /already in use/i.test(reason)
+        status.className = 'error-title'
+        status.textContent = alreadyOpen ? 'Penrose Studio is already open' : 'Penrose Studio could not open'
+        document.getElementById('hint').textContent = alreadyOpen
+          ? 'Close the other copy of the app, then open it again.'
+          : 'Quit the app and open it again. If this keeps happening, send the details below to support.'
+        const details = document.createElement('details')
+        const summary = document.createElement('summary')
+        summary.textContent = 'Show details'
+        const pre = document.createElement('pre')
+        pre.textContent = reason
+        details.append(summary, pre)
+        document.getElementById('main').append(details)
+      }
+    </script>
+  </body>
+</html>

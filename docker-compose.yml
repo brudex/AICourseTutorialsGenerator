@@ -1,0 +1,55 @@
+# Self hosting on one server (a VPS): database, a one-off migration, the web
+# app and the worker. Put secrets in .env.production (never committed).
+# With STORAGE_DRIVER=local, web and worker share the "storage" volume; for
+# more than one server use STORAGE_DRIVER=s3. See docs/14-deployment.md.
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: studio
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: studio
+    volumes: [db:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U studio"]
+      interval: 5s
+      retries: 10
+
+  migrate:
+    image: ai-course-studio
+    build: &build
+      context: .
+      args:
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:?set NEXT_PUBLIC_APP_URL}
+        NEXT_PUBLIC_APP_DOMAIN: ${NEXT_PUBLIC_APP_DOMAIN:?set NEXT_PUBLIC_APP_DOMAIN}
+        NEXT_PUBLIC_APP_NAME: ${NEXT_PUBLIC_APP_NAME:-AI Course Studio}
+        NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID:-}
+        NEXT_PUBLIC_SUBSCRIPTIONS_ENABLED: ${NEXT_PUBLIC_SUBSCRIPTIONS_ENABLED:-false}
+        NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
+    env_file: .env.production
+    command: ["npx", "prisma", "migrate", "deploy"]
+    depends_on: { db: { condition: service_healthy } }
+
+  web:
+    image: ai-course-studio
+    build: *build
+    restart: unless-stopped
+    env_file: .env.production
+    ports: ["3000:3000"]
+    volumes: [storage:/app/.storage]
+    depends_on: { migrate: { condition: service_completed_successfully } }
+
+  worker:
+    image: ai-course-studio
+    build: *build
+    restart: unless-stopped
+    env_file: .env.production
+    command: ["npm", "run", "worker"]
+    volumes: [storage:/app/.storage]
+    stop_grace_period: 2m
+    depends_on: { migrate: { condition: service_completed_successfully } }
+
+volumes:
+  db:
+  storage:

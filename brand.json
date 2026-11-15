@@ -1,0 +1,26 @@
+{
+  "name": "Penrose Studio",
+  "id": "com.penrose.studio",
+  "color": "#FCE7A1",
+  "primary": "#F5C842",
+  "deep": "#E0A800",
+  "textColor": "#3A2C00",
+  "ports": {
+    "app": 47831,
+    "db": 47832
+  },
+  "learnerLevels": [
+    "undergraduates",
+    "graduates",
+    "masters",
+    "phd",
+    "professionals"
+  ],
+  "audienceCustomize": false,
+  "publishingPlatforms": [
+    "YOUTUBE",
+    "GOOGLE_DRIVE"
+  ],
+  "publishingExportGuides": false,
+  "buyer": "Nana Osafo Penrose"
+}

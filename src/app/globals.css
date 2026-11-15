@@ -1,0 +1,364 @@
+/*
+ * Copyright (c) 2026 Web Prodigies LLC. All rights reserved.
+ *
+ * This source code is proprietary and confidential. Use, copying,
+ * modification or distribution requires a written license from
+ * Web Prodigies LLC. See the LICENSE file in the root of this repository.
+ */
+
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
+
+/* LIGHT_THEME_SCOPE: `.light-scope` (on <html> or any element) wins over the app's
+ * forced dark theme, for pages that must look like the public website (the
+ * student school). Dark utilities stop inside it too. */
+@custom-variant dark (&:is(.dark *):not(:is(.light-scope, .light-scope *)));
+
+:root,
+.light-scope {
+  /* SOURCE OF TRUTH KEYWORDS: BRAND_TOKENS, --brand, --brand-light,
+   * --highlight, app icon colours
+   * The official logo palette: primary #0754D8, deep #072C91, light #1198F6
+   * --highlight and the second chart colour use the deep blue #072C91 (the
+   * yellow #FFC414 was retired). --brand-gradient is the logo gradient.
+   * Primary, ring and charts use these too.
+   * --brand-yellow is the website's accent yellow, used only by public
+   * facing pages (the student school) to match the marketing site. */
+  --brand: #072c91;
+  --brand-yellow: #ffc414;
+  --brand-yellow-foreground: #0b1736;
+  --brand-light: #1198f6;
+  --highlight: #072c91;
+  --highlight-foreground: #ffffff;
+  /* LOGO_SURFACE: the plate behind uploaded organization logos. Most logos
+   * are drawn for a white page, so it stays white in both themes. */
+  --logo-surface: #ffffff;
+  --brand-gradient: linear-gradient(135deg, #1198f6 0%, #0754d8 45%, #072c91 100%);
+  --background: oklch(0.99 0 0);
+  --foreground: oklch(0 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0 0 0);
+  --popover: oklch(0.99 0 0);
+  --popover-foreground: oklch(0 0 0);
+  --primary: #0754d8;
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.95 0.01 260);
+  --secondary-foreground: oklch(0 0 0);
+  --muted: oklch(0.97 0.008 260);
+  --muted-foreground: oklch(0.44 0 0);
+  --accent: oklch(0.94 0.02 258);
+  --accent-foreground: #072c91;
+  --destructive: oklch(0.63 0.19 23.03);
+  --destructive-foreground: oklch(1 0 0);
+  /* SOURCE OF TRUTH KEYWORDS: --alert-banner, ALERT_BANNER_SURFACE
+   * A soft brick-red bar meant to be noticed and acted on, held IDENTICAL in
+   * light and dark (see .dark below). It is a fixed alert surface rather than a
+   * themed one — muting it in dark mode is exactly the case where a tenant
+   * stops seeing that it is over its plan. White on this red clears contrast in
+   * both themes, which is why the pair is safe to pin. */
+  --alert-banner: oklch(0.625 0.128 24);
+  --alert-banner-foreground: oklch(1 0 0);
+  --alert-banner-border: oklch(0.545 0.132 24);
+  /* SOURCE OF TRUTH KEYWORDS: --success, --success-foreground, --success-border,
+   * UpgradeModal, PricingCard, SAVINGS_ACCENT
+   * The one POSITIVE accent in the palette — yearly savings, an active trial, a
+   * plan the organization already holds. Pinned to the same value in both
+   * themes for the same reason --alert-banner is: "you save 20%" and "current
+   * plan" must read as good news on any background, and a token that inverts
+   * with the theme cannot promise that. It exists as a token so the pricing
+   * surfaces never reach for a raw `text-green-500` — the app has exactly one
+   * green and it is defined here. */
+  --success: oklch(0.72 0.17 149);
+  --success-foreground: oklch(0.14 0 0);
+  --success-border: oklch(0.62 0.15 149);
+  /* SOURCE OF TRUTH KEYWORDS: --app-banner-height, APP_BANNER_OFFSET
+   * How much the app shell is pushed down by a full-width banner above it.
+   * 0 by default, so the shell behaves exactly as before when nothing is
+   * showing. The desktop sidebar is `fixed` to the viewport and would
+   * otherwise slide underneath the bar instead of starting below it, so it
+   * offsets from this. Raised by the `:has()` rule in @layer base the instant a
+   * banner is in the DOM — see the note there for why that is CSS and not JS. */
+  --app-banner-height: 0px;
+  --border: oklch(0.91 0.015 260);
+  --input: oklch(0.92 0.015 260);
+  --ring: #1198f6;
+  --chart-1: #1198f6;
+  --chart-2: #072c91;
+  --chart-3: oklch(0.72 0 0);
+  --chart-4: oklch(0.92 0 0);
+  --chart-5: oklch(0.56 0 0);
+  --sidebar: oklch(0.98 0.008 260);
+  --sidebar-foreground: oklch(0 0 0);
+  --sidebar-primary: #0754d8;
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.94 0.02 258);
+  --sidebar-accent-foreground: oklch(0 0 0);
+  --sidebar-border: oklch(0.92 0.015 260);
+  --sidebar-ring: #1198f6;
+  --font-sans: Geist, sans-serif;
+  --font-serif: Georgia, serif;
+  --font-mono: Geist Mono, monospace;
+  --radius: 0.5rem;
+  --shadow-x: 0px;
+  --shadow-y: 1px;
+  --shadow-blur: 2px;
+  --shadow-spread: 0px;
+  --shadow-opacity: 0.18;
+  --shadow-color: hsl(0 0% 0%);
+  --shadow-2xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.09);
+  --shadow-xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.09);
+  --shadow-sm:
+    0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 1px 2px -1px hsl(0 0% 0% / 0.18);
+  --shadow:
+    0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 1px 2px -1px hsl(0 0% 0% / 0.18);
+  --shadow-md:
+    0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 2px 4px -1px hsl(0 0% 0% / 0.18);
+  --shadow-lg:
+    0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 4px 6px -1px hsl(0 0% 0% / 0.18);
+  --shadow-xl:
+    0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 8px 10px -1px hsl(0 0% 0% / 0.18);
+  --shadow-2xl: 0px 1px 2px 0px hsl(0 0% 0% / 0.45);
+  --tracking-normal: 0em;
+  --spacing: 0.25rem;
+}
+
+.dark:not(.light-scope) {
+  /* SOURCE OF TRUTH KEYWORDS: BRAND_TOKENS, --brand, --brand-light,
+   * --highlight, app icon colours
+   * The official logo palette: primary #0754D8, deep #072C91, light #1198F6
+   * --highlight and the second chart colour use the deep blue #072C91 (the
+   * yellow #FFC414 was retired). --brand-gradient is the logo gradient.
+   * Primary, ring and charts use these too.
+   * --brand-yellow is the website's accent yellow, used only by public
+   * facing pages (the student school) to match the marketing site. */
+  --brand: #072c91;
+  --brand-yellow: #ffc414;
+  --brand-yellow-foreground: #0b1736;
+  --brand-light: #1198f6;
+  --highlight: #072c91;
+  --highlight-foreground: #ffffff;
+  /* LOGO_SURFACE: the plate behind uploaded organization logos. Most logos
+   * are drawn for a white page, so it stays white in both themes. */
+  --logo-surface: #ffffff;
+  --brand-gradient: linear-gradient(135deg, #1198f6 0%, #0754d8 45%, #072c91 100%);
+  /* APP_SHELL_BLUE: only the sidebar (and the outer layout frame around the
+   * inset panel) uses a faded mid shade of the logo blue with white text. The content area, cards, popovers
+   * and inputs stay neutral; blue fills are otherwise buttons only. */
+  --background: oklch(0.13 0.02 265);
+  --foreground: oklch(1 0 0);
+  --card: oklch(0.17 0.025 265);
+  --card-foreground: oklch(1 0 0);
+  --popover: oklch(0.19 0.03 265);
+  --popover-foreground: oklch(1 0 0);
+  --primary: #0754d8;
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.24 0.03 264);
+  --secondary-foreground: oklch(1 0 0);
+  --muted: oklch(0.22 0.03 264);
+  --muted-foreground: oklch(0.74 0.02 260);
+  --accent: oklch(0.28 0.05 262);
+  --accent-foreground: oklch(1 0 0);
+  --destructive: oklch(0.69 0.2 23.91);
+  --destructive-foreground: oklch(0 0 0);
+  /* Intentionally the same values as :root — see the note there. */
+  --alert-banner: oklch(0.625 0.128 24);
+  --alert-banner-foreground: oklch(1 0 0);
+  --alert-banner-border: oklch(0.545 0.132 24);
+  /* Intentionally the same values as :root — see the note there. */
+  --success: oklch(0.72 0.17 149);
+  --success-foreground: oklch(0.14 0 0);
+  --success-border: oklch(0.62 0.15 149);
+  --border: oklch(0.27 0.03 264);
+  --input: oklch(0.31 0.035 264);
+  --ring: #1198f6;
+  --chart-1: #1198f6;
+  /* Light tint: the deep blue #072C91 is too dark to read on dark cards. */
+  --chart-2: #9ccfff;
+  --chart-3: oklch(0.56 0 0);
+  --chart-4: oklch(0.44 0 0);
+  --chart-5: oklch(0.92 0 0);
+  --sidebar: #3b5ba5;
+  --sidebar-foreground: oklch(1 0 0);
+  --sidebar-primary: #0754d8;
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(1 0 0 / 0.16);
+  --sidebar-accent-foreground: oklch(1 0 0);
+  --sidebar-border: oklch(1 0 0 / 0.18);
+  --sidebar-ring: #9ccfff;
+  --font-sans: Geist, sans-serif;
+  --font-serif: Georgia, serif;
+  --font-mono: Geist Mono, monospace;
+  --radius: 0.5rem;
+  --shadow-x: 0px;
+  --shadow-y: 1px;
+  --shadow-blur: 2px;
+  --shadow-spread: 0px;
+  --shadow-opacity: 0.18;
+  --shadow-color: hsl(0 0% 0%);
+  --shadow-2xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.09);
+  --shadow-xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.09);
+  --shadow-sm:
+    0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 1px 2px -1px hsl(0 0% 0% / 0.18);
+  --shadow:
+    0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 1px 2px -1px hsl(0 0% 0% / 0.18);
+  --shadow-md:
+    0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 2px 4px -1px hsl(0 0% 0% / 0.18);
+  --shadow-lg:
+    0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 4px 6px -1px hsl(0 0% 0% / 0.18);
+  --shadow-xl:
+    0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 8px 10px -1px hsl(0 0% 0% / 0.18);
+  --shadow-2xl: 0px 1px 2px 0px hsl(0 0% 0% / 0.45);
+}
+
+/* SOURCE OF TRUTH KEYWORDS: APP_BANNER_OFFSET, --app-banner-height,
+ * data-app-banner, PlanOverageBanner
+ *
+ * WHAT:  Reserves the shell offset whenever a full-width app banner is in the
+ *        DOM.
+ * WHY:   Measuring the banner in an effect and publishing the height left the
+ *        FIRST paint at 0 — the server HTML has no measurement — so the fixed
+ *        sidebar rendered flush to the top and visibly dropped once hydration
+ *        ran. `:has()` resolves during that first paint, from the server
+ *        markup, so the sidebar is never in the wrong place. Removal is tracked
+ *        for free: take the banner out and the offset collapses with it.
+ *        Matched on a data attribute, not a class, so restyling the banner can
+ *        never silently detach the offset.
+ *        DELIBERATELY UNLAYERED, directly beneath the :root it overrides.
+ *        Inside `@layer base` it lost: unlayered declarations outrank every
+ *        layered one regardless of specificity, so the `:root` fallback above
+ *        won and the sidebar covered the banner. Both rules sitting unlayered
+ *        lets specificity decide, and html + [attr] beats :root.
+ *        A CONSTANT is sound because the offset only has to be exact where a
+ *        fixed sidebar exists — `md` and up — and the banner is pinned to h-16
+ *        at those widths. Below `md` the sidebar is a Sheet overlay with
+ *        nothing to offset, and the value only feeds a `min-height` there,
+ *        where under-reserving costs nothing.
+ * WHERE: Consumed by the sidebar wrapper + container in
+ *        src/components/ui/sidebar.tsx; set by <PlanOverageBanner />. */
+html:has([data-app-banner]) {
+  --app-banner-height: 4rem;
+}
+
+@theme inline {
+  --color-brand: var(--brand);
+  --color-brand-light: var(--brand-light);
+  --color-brand-yellow: var(--brand-yellow);
+  --color-brand-yellow-foreground: var(--brand-yellow-foreground);
+  --color-highlight: var(--highlight);
+  --color-highlight-foreground: var(--highlight-foreground);
+  --color-logo-surface: var(--logo-surface);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-alert-banner: var(--alert-banner);
+  --color-alert-banner-foreground: var(--alert-banner-foreground);
+  --color-alert-banner-border: var(--alert-banner-border);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-border: var(--success-border);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --font-serif: var(--font-serif);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --shadow-2xs: var(--shadow-2xs);
+  --shadow-xs: var(--shadow-xs);
+  --shadow-sm: var(--shadow-sm);
+  --shadow: var(--shadow);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+  --shadow-xl: var(--shadow-xl);
+  --shadow-2xl: var(--shadow-2xl);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* SOURCE OF TRUTH KEYWORDS: HIDDEN_PAGE_SCROLLBAR, hide scrollbar
+ * The page still scrolls (wheel, trackpad, keys); only the window-level bar is
+ * hidden, which matches a native app feel in the desktop window. Inner lists
+ * keep their own scrollbars. */
+html,
+body {
+  scrollbar-width: none;
+}
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  display: none;
+}
+
+/* BRAND: Penrose Studio — buttons, links, rings and the sign-in background. */
+:root,
+.light-scope {
+  --brand: #E0A800;
+  --brand-light: #FCE7A1;
+  --brand-gradient: linear-gradient(135deg, #FCE7A1 0%, #F5C842 45%, #E0A800 100%);
+  --primary: #F5C842;
+  --primary-foreground: #3A2C00;
+  --ring: #F5C842;
+  --chart-1: #F5C842;
+  --accent: color-mix(in oklch, #FCE7A1 45%, white);
+  --accent-foreground: #3A2C00;
+}
+.dark:not(.light-scope) {
+  --brand: #E0A800;
+  --brand-light: #FCE7A1;
+  --brand-gradient: linear-gradient(135deg, #FCE7A1 0%, #F5C842 45%, #E0A800 100%);
+  --primary: #F5C842;
+  --primary-foreground: #3A2C00;
+  --ring: #F5C842;
+  --chart-1: #F5C842;
+}
+
+/* BRAND: Penrose Studio — the sidebar and the app frame around every page. */
+.dark:not(.light-scope) {
+  --sidebar: #FCE7A1;
+  --sidebar-foreground: #3A2C00;
+  --sidebar-primary: #3A2C00;
+  --sidebar-primary-foreground: #FCE7A1;
+  --sidebar-accent: oklch(0 0 0 / 0.12);
+  --sidebar-accent-foreground: #3A2C00;
+  --sidebar-border: oklch(0 0 0 / 0.15);
+  --sidebar-ring: #3A2C00;
+}

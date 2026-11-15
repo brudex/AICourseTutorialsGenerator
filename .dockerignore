@@ -1,0 +1,16 @@
+# Never ship secrets or local data in an image.
+.env
+.env.*
+!.env.example
+client_secret*.json
+*.csv
+.storage
+.git
+node_modules
+.next
+.next-dev
+desktop
+docs
+*.tsbuildinfo
+*.png
+!public/**/*.png

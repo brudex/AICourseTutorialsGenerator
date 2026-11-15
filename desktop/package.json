@@ -1,0 +1,18 @@
+{
+  "name": "ai-course-desktop",
+  "private": true,
+  "type": "module",
+  "description": "Desktop (Tauri) packaging of the course studio: local runtime, build pipeline and native shell.",
+  "scripts": {
+    "bundle": "node scripts/bundle.mjs",
+    "tauri": "tauri",
+    "dev": "npm run bundle && tauri dev",
+    "build": "npm run bundle && tauri build"
+  },
+  "dependencies": {
+    "embedded-postgres": "17.11.0-beta.19"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.4"
+  }
+}

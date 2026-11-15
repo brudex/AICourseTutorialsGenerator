@@ -1,0 +1,290 @@
+/*
+ * Copyright (c) 2026 Web Prodigies LLC. All rights reserved.
+ *
+ * This source code is proprietary and confidential. Use, copying,
+ * modification or distribution requires a written license from
+ * Web Prodigies LLC. See the LICENSE file in the root of this repository.
+ */
+
+/**
+ * SOURCE OF TRUTH KEYWORDS: REQUIRED_ENV, RequiredEnvVar, EnvChecklistItem,
+ *   getEnvChecklist, getMissingRequiredEnv, hasMissingRequiredEnv,
+ *   OPTIONAL_ENV, OptionalEnvVar, OptionalEnvItem, getOptionalEnvChecklist
+ *
+ * WHAT:  Two lists: REQUIRED_ENV (the app CANNOT run without these) and
+ *        OPTIONAL_ENV (fail-soft integrations like Stripe/Resend the app runs
+ *        fine WITHOUT), plus helpers to check which are set.
+ * WHY:   Drives the developer setup gate: the root layout renders a checklist
+ *        instead of the app until every required var is present, so a fresh
+ *        clone fails with clear instructions rather than a cryptic crash.
+ *        Optional integrations NEVER block startup — they're surfaced on the
+ *        same checklist purely as informational rows (purpose + how to enable)
+ *        so a developer knows what's off and what turning it on unlocks.
+ *        Only presence is checked and only labels/help/ok are exposed — secret
+ *        VALUES are never read out, so nothing leaks to the client.
+ * WHERE: Read by src/app/layout.tsx (the gate); rendered by
+ *        src/components/global/setup-checklist.tsx.
+ */
+
+import { PLAN_ORDER, PLANS, isPaidPlan } from './plans'
+import { AUTH_PROVIDER } from '@/lib/adapters/provider'
+
+export interface RequiredEnvVar {
+  /** The process.env key that must be set. */
+  key: string
+  /** Short human label for the checklist row. */
+  label: string
+  /** One-line instruction telling the developer how to satisfy it. */
+  help: string
+  /** Icon name resolved by the setup checklist (see its icon map). */
+  icon: string
+  /**
+   * Optional call-to-action link rendered under the help text — e.g. a
+   * recommended provider to get the value from. `label` is the button text,
+   * `url` opens in a new tab. Purely presentational (no secret), so it's safe
+   * to expose to the client.
+   */
+  link?: { label: string; url: string }
+  /**
+   * Optional walkthrough video (e.g. a Loom) shown as a secondary CTA under the
+   * help text. `label` overrides the default button text. Presentational only
+   * (no secret), so it's safe to expose to the client.
+   */
+  video?: { url: string; label?: string }
+  /**
+   * Optional predicate that decides whether this var is required RIGHT NOW.
+   * Omitted ⇒ always required. Returning false ⇒ the var is irrelevant given
+   * the current config and is dropped from the checklist entirely (not shown,
+   * not counted). This is how an opt-in feature (e.g. the portal) makes its
+   * companion vars required only once the feature is turned on — so enabling
+   * the feature without its config surfaces as an incomplete checklist item
+   * instead of failing silently.
+   */
+  when?: () => boolean
+}
+
+/* Edit this list to change what blocks startup. Keep it to the bare minimum —
+ * anything that can fail soft belongs in its own config module, not here. A var
+ * that only matters when a feature is enabled uses `when` so it's required
+ * conditionally rather than always. */
+export const REQUIRED_ENV: readonly RequiredEnvVar[] = [
+  {
+    key: 'DATABASE_URL',
+    label: 'Database',
+    help: 'Set DATABASE_URL to your PostgreSQL connection URL, then run `npx prisma migrate deploy` to create the tables.',
+    icon: 'Database',
+    link: {
+      label: 'Get a free Postgres database at Neon',
+      url: 'https://neon.tech/?ref=wp',
+    },
+    /* TODO(webprodigies): replace with your real Loom share link. */
+    video: {
+      url: 'https://www.loom.com/share/36262244039a48159937721fea0ab993',
+    },
+  },
+  {
+    /* PROVIDER_ISOLATION: required only while Better Auth is the selected
+     * provider. A provider that signs its own sessions has no use for this var,
+     * so the predicate drops it from the checklist entirely rather than showing
+     * it as an unmet requirement. */
+    key: 'BETTER_AUTH_SECRET',
+    label: 'Auth secret',
+    help: 'Set BETTER_AUTH_SECRET. Type this command in your mac terminal. It should give you a key: openssl rand -base64 32',
+    icon: 'KeyRound',
+    when: () => AUTH_PROVIDER === 'better-auth',
+  },
+  {
+    /* SOURCE OF TRUTH KEYWORDS: AI_KEYS_ENCRYPTION_KEY, encryptApiKey,
+     *   decryptApiKey, ProviderCredentials
+     * Always required: workspaces store their own AI provider keys
+     * (bring-your-own-key), and those are encrypted at rest with AES-256-GCM
+     * under this 32-byte key (src/lib/ai/crypto.ts). Rotating it makes every
+     * stored provider key undecryptable, so it is set once per environment. */
+    key: 'AI_KEYS_ENCRYPTION_KEY',
+    label: 'AI key encryption',
+    help: 'Set AI_KEYS_ENCRYPTION_KEY — it encrypts the AI provider API keys your workspaces save. Generate one in your terminal with: openssl rand -base64 32 (keep it safe; changing it later invalidates saved keys).',
+    icon: 'KeyRound',
+  },
+  /* SOURCE OF TRUTH KEYWORDS: STORAGE_DRIVER, S3 storage env
+   * Media storage: local disk needs nothing; S3-compatible storage needs its
+   * bucket and credentials, required only once STORAGE_DRIVER="s3". */
+  ...(['S3_BUCKET', 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY'] as const).map((key) => ({
+    key,
+    label: `Media storage (${key})`,
+    help: `STORAGE_DRIVER is "s3", so set ${key}. Works with AWS S3, Cloudflare R2, MinIO and other S3-compatible services (set S3_ENDPOINT for non-AWS).`,
+    icon: 'Database',
+    when: () => process.env['STORAGE_DRIVER'] === 's3',
+  })),
+  {
+    /* Required only when the portal is turned on: without the owner email the
+     * portal is on but no admin account is ever created, so no one can open
+     * /portal — a silent, confusing dead end. */
+    key: 'PORTAL_INITIAL_OWNER_EMAIL',
+    label: 'Portal owner email',
+    help: 'You turned the admin portal on (PORTAL_ENABLED="true"). Set PORTAL_INITIAL_OWNER_EMAIL to the email address you sign in with — that account becomes the portal admin. If you don\'t need the portal, set PORTAL_ENABLED="false" instead.',
+    icon: 'ShieldCheck',
+    when: () => process.env['PORTAL_ENABLED'] === 'true',
+  },
+]
+
+export interface EnvChecklistItem extends RequiredEnvVar {
+  ok: boolean
+}
+
+/**
+ * SOURCE OF TRUTH KEYWORDS: OptionalEnvVar, OptionalEnvKey, OPTIONAL_ENV
+ *
+ * WHAT:  An integration the app runs fine WITHOUT (fail-soft). Shown on the
+ *        setup checklist as an informational row — never blocks startup.
+ * WHY:   A developer should be able to see, at a glance, what's turned off,
+ *        WHAT it would do if enabled, and HOW to enable it — so an unwired
+ *        integration (e.g. Stripe) is a clearly-explained choice, not a
+ *        mystery. An integration is a GROUP of env vars (`keys`), not one flag:
+ *        showing each key's status means a half-configured integration (e.g.
+ *        secret key set but no price IDs) reads as exactly that, instead of a
+ *        misleading "Configured". `purpose` carries the reasoning + the current
+ *        fallback behaviour; `help` carries the enable-it instructions.
+ * WHERE: Rendered by src/components/global/setup-checklist.tsx.
+ */
+export interface OptionalEnvKey {
+  /** The process.env key. */
+  key: string
+  /** Short human label (name the thing, e.g. "Secret key"). */
+  label: string
+  /** true ⇒ helpful but doesn't gate the "Configured" badge (e.g. per-plan price ids). */
+  optional?: boolean
+}
+
+export interface OptionalEnvVar {
+  /** Stable id for the row (not tied to any single env var). */
+  id: string
+  /** When set, the row is shown only for these providers. */
+  whenProvider?: readonly string[]
+  /** Short human label for the row (name the integration, not a key). */
+  label: string
+  /** What it does + what the app does WITHOUT it (the fail-soft fallback). */
+  purpose: string
+  /** How to turn it on if they want it. */
+  help: string
+  /** Icon name resolved by the setup checklist (see its icon map). */
+  icon: string
+  /** Every env var this integration reads, with per-key status shown. */
+  keys: OptionalEnvKey[]
+  /** Optional provider/sign-up link (same shape as RequiredEnvVar.link). */
+  link?: { label: string; url: string }
+  /** Optional walkthrough video (same shape as RequiredEnvVar.video). */
+  video?: { url: string; label?: string }
+}
+
+/* Per-plan Stripe price-id keys, DERIVED from the plan source of truth so the
+ * labels follow the (env-driven) plan names and the key list never duplicates
+ * PLAN_ORDER. `free` has no price; the env-var name follows plans.ts' fixed
+ * `NEXT_PUBLIC_<PLANKEY>_PRICE_<INTERVAL>` convention. Marked optional: you only
+ * need a price for the plans you actually sell. */
+const STRIPE_PRICE_KEYS: OptionalEnvKey[] = PLAN_ORDER.filter(isPaidPlan).flatMap((plan) =>
+  (['monthly', 'yearly'] as const).map((interval) => ({
+    key: `NEXT_PUBLIC_${plan.toUpperCase()}_PRICE_${interval.toUpperCase()}`,
+    label: `${PLANS[plan].name} price (${interval})`,
+    optional: true,
+  }))
+)
+
+/* Fail-soft integrations. Adding one here surfaces it on the setup checklist as
+ * an informational row; it NEVER affects hasMissingRequiredEnv (never blocks).
+ *
+ * PROVIDER_ISOLATION: rows are filtered by `whenProvider` so an operator only
+ * ever sees integrations that apply to the provider they selected — Stripe keys
+ * would be noise under a provider that owns checkout itself, and that
+ * provider's own webhook would be noise under Better Auth. */
+export const OPTIONAL_ENV: readonly OptionalEnvVar[] = [
+  {
+    id: 'publishing',
+    label: 'Publishing (YouTube, Google Classroom, Google Drive, Vimeo, Canvas)',
+    purpose:
+      'Optional. These are your own app keys, so customers only click Connect and sign in. Without the Google keys, YouTube, Google Classroom and Google Drive show as Available soon, and Vimeo likewise without its keys. Canvas schools without a key connect with an access token instead. LearnDash needs no keys.',
+    help: 'Create a Google Cloud OAuth client with the YouTube Data API, Classroom API and Drive API turned on, a Vimeo app with upload access, and ask each school for a Canvas developer key. Register <app address>/api/publishing/callback as the redirect address in each. Full steps: docs/13-publishing.md.',
+    icon: 'Plug',
+    keys: [
+      { key: 'GOOGLE_PUBLISHING_CLIENT_ID', label: 'Google client ID' },
+      { key: 'GOOGLE_PUBLISHING_CLIENT_SECRET', label: 'Google client secret' },
+      { key: 'VIMEO_CLIENT_ID', label: 'Vimeo client ID', optional: true },
+      { key: 'VIMEO_CLIENT_SECRET', label: 'Vimeo client secret', optional: true },
+      { key: 'CANVAS_OAUTH_APPS', label: 'Canvas developer keys (per school)', optional: true },
+    ],
+  },
+]
+
+export interface OptionalEnvKeyStatus extends OptionalEnvKey {
+  ok: boolean
+}
+
+export interface OptionalEnvItem extends Omit<OptionalEnvVar, 'keys'> {
+  keys: OptionalEnvKeyStatus[]
+  /** True when every NON-optional key is set. */
+  ok: boolean
+}
+
+/* A var counts as set only when it's a non-empty, trimmed string. */
+function isSet(key: string): boolean {
+  const value = process.env[key]
+  return typeof value === 'string' && value.trim().length > 0
+}
+
+/* A var is in scope unless its `when` predicate says it's irrelevant now. */
+function isRequiredNow(item: RequiredEnvVar): boolean {
+  return item.when === undefined || item.when()
+}
+
+/**
+ * SOURCE OF TRUTH KEYWORDS: getEnvChecklist
+ *
+ * WHAT:  The currently-required vars annotated with whether each is set.
+ *        Vars whose `when` predicate is false are excluded entirely.
+ * WHERE: Passed to <SetupChecklist /> by the root layout.
+ */
+export function getEnvChecklist(): EnvChecklistItem[] {
+  return REQUIRED_ENV.filter(isRequiredNow).map((item) => ({
+    ...item,
+    ok: isSet(item.key),
+  }))
+}
+
+/**
+ * SOURCE OF TRUTH KEYWORDS: getOptionalEnvChecklist
+ *
+ * WHAT:  The optional integrations annotated with whether each is configured.
+ * WHY:   Presentational only — these never gate startup; the checklist shows
+ *        them so a developer knows what's off and how to switch it on.
+ * WHERE: Passed to <SetupChecklist /> by the root layout.
+ */
+export function getOptionalEnvChecklist(): OptionalEnvItem[] {
+  return OPTIONAL_ENV.filter(
+    (item) => item.whenProvider === undefined || item.whenProvider.includes(AUTH_PROVIDER)
+  ).map((item) => {
+    const keys = item.keys.map((k) => ({ ...k, ok: isSet(k.key) }))
+    /* "Configured" = every non-optional key is set; optional (per-plan price)
+     * keys are shown but don't gate the badge. */
+    const ok = keys.filter((k) => !k.optional).every((k) => k.ok)
+    return { ...item, keys, ok }
+  })
+}
+
+/**
+ * SOURCE OF TRUTH KEYWORDS: getMissingRequiredEnv
+ *
+ * WHAT:  Only the required vars that are NOT set.
+ * WHERE: Used by the gate to decide whether to show the checklist.
+ */
+export function getMissingRequiredEnv(): EnvChecklistItem[] {
+  return getEnvChecklist().filter((item) => !item.ok)
+}
+
+/**
+ * SOURCE OF TRUTH KEYWORDS: hasMissingRequiredEnv
+ *
+ * WHAT:  True when at least one required var is missing.
+ * WHERE: The root layout's branch condition.
+ */
+export function hasMissingRequiredEnv(): boolean {
+  return REQUIRED_ENV.filter(isRequiredNow).some((item) => !isSet(item.key))
+}
