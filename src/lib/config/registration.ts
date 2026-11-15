@@ -6,14 +6,19 @@
  * Web Prodigies LLC. See the LICENSE file in the root of this repository.
  */
 
+import { platformSettingFlag } from '@/lib/platform-settings'
+
 /**
- * SOURCE OF TRUTH KEYWORDS: REGISTRATION_OPEN
+ * SOURCE OF TRUTH KEYWORDS: isRegistrationOpen, REGISTRATION_OPEN,
+ *   registrationOpen, invitation only, closed sign up
  *
- * WHAT:  Boolean indicating whether self-serve sign-up is allowed.
- * WHY:   Set NEXT_PUBLIC_REGISTRATION_OPEN=false to put the app in
- *        invitation-only mode; the auth.ts databaseHooks.user.create.before
- *        hook enforces this server-side as a last line of defense.
- * WHERE: Read by auth.ts (server gate) and the sign-up UI (hide form).
+ * WHAT:  Whether self-serve sign-up is allowed right now.
+ * WHY:   Read per request from the portal setting `registrationOpen`, so the
+ *        operator can close or reopen sign up without a restart. The auth.ts
+ *        databaseHooks.user.create.before hook enforces it server-side as the
+ *        last line of defense.
+ * WHERE: auth.ts (server gate), src/proxy.ts and the sign-up page (redirect).
  */
-export const REGISTRATION_OPEN =
-  process.env['NEXT_PUBLIC_REGISTRATION_OPEN'] !== 'false'
+export function isRegistrationOpen(): boolean {
+  return platformSettingFlag('registrationOpen')
+}

@@ -102,19 +102,12 @@ export const REQUIRED_ENV: readonly RequiredEnvVar[] = [
      * stored provider key undecryptable, so it is set once per environment. */
     key: 'AI_KEYS_ENCRYPTION_KEY',
     label: 'AI key encryption',
-    help: 'Set AI_KEYS_ENCRYPTION_KEY — it encrypts the AI provider API keys your workspaces save. Generate one in your terminal with: openssl rand -base64 32 (keep it safe; changing it later invalidates saved keys).',
+    help: 'Set AI_KEYS_ENCRYPTION_KEY — it encrypts the AI provider API keys your workspaces save and the secrets in portal settings. Generate one in your terminal with: openssl rand -base64 32 (keep it safe; changing it later invalidates saved keys).',
     icon: 'KeyRound',
   },
-  /* SOURCE OF TRUTH KEYWORDS: STORAGE_DRIVER, S3 storage env
-   * Media storage: local disk needs nothing; S3-compatible storage needs its
-   * bucket and credentials, required only once STORAGE_DRIVER="s3". */
-  ...(['S3_BUCKET', 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY'] as const).map((key) => ({
-    key,
-    label: `Media storage (${key})`,
-    help: `STORAGE_DRIVER is "s3", so set ${key}. Works with AWS S3, Cloudflare R2, MinIO and other S3-compatible services (set S3_ENDPOINT for non-AWS).`,
-    icon: 'Database',
-    when: () => process.env['STORAGE_DRIVER'] === 's3',
-  })),
+  /* Media storage, email, publishing apps, rate limiting, rendering, worker
+   * and sign up are portal settings (src/lib/config/platform-settings.ts),
+   * edited at /portal/settings, so none of them block startup here. */
   {
     /* Required only when the portal is turned on: without the owner email the
      * portal is on but no admin account is ever created, so no one can open
@@ -197,21 +190,7 @@ const STRIPE_PRICE_KEYS: OptionalEnvKey[] = PLAN_ORDER.filter(isPaidPlan).flatMa
  * would be noise under a provider that owns checkout itself, and that
  * provider's own webhook would be noise under Better Auth. */
 export const OPTIONAL_ENV: readonly OptionalEnvVar[] = [
-  {
-    id: 'publishing',
-    label: 'Publishing (YouTube, Google Classroom, Google Drive, Vimeo, Canvas)',
-    purpose:
-      'Optional. These are your own app keys, so customers only click Connect and sign in. Without the Google keys, YouTube, Google Classroom and Google Drive show as Available soon, and Vimeo likewise without its keys. Canvas schools without a key connect with an access token instead. LearnDash needs no keys.',
-    help: 'Create a Google Cloud OAuth client with the YouTube Data API, Classroom API and Drive API turned on, a Vimeo app with upload access, and ask each school for a Canvas developer key. Register <app address>/api/publishing/callback as the redirect address in each. Full steps: docs/13-publishing.md.',
-    icon: 'Plug',
-    keys: [
-      { key: 'GOOGLE_PUBLISHING_CLIENT_ID', label: 'Google client ID' },
-      { key: 'GOOGLE_PUBLISHING_CLIENT_SECRET', label: 'Google client secret' },
-      { key: 'VIMEO_CLIENT_ID', label: 'Vimeo client ID', optional: true },
-      { key: 'VIMEO_CLIENT_SECRET', label: 'Vimeo client secret', optional: true },
-      { key: 'CANVAS_OAUTH_APPS', label: 'Canvas developer keys (per school)', optional: true },
-    ],
-  },
+  /* Publishing app keys moved to portal settings (Publishing apps). */
 ]
 
 export interface OptionalEnvKeyStatus extends OptionalEnvKey {

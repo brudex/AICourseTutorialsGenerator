@@ -9,13 +9,14 @@
 /**
  * SOURCE OF TRUTH KEYWORDS: prisma, DbClient, APP_NAME, APP_URL, APP_DOMAIN,
  *   APP_DESCRIPTION, APP_METADATA_BASE, BRANDING, AUTH_ROUTES,
- *   REGISTRATION_OPEN, PLANS, PlanKey, PlanDefinition, resend,
+ *   isRegistrationOpen, PLANS, PlanKey, PlanDefinition, resend,
  *   AUTH_CALLBACK_PARAM, resolveAuthCallback, authRouteWithCallback,
- *   getResendClient, RESEND_DEFAULT_FROM, isResendConfigured, ROUTES,
+ *   getResendClient, resendDefaultFrom, isResendConfigured, ROUTES,
  *   AppRouteKey, PLAN_ORDER, BillingInterval, getPlanPriceId, getPlanByPriceId,
  *   getNextPlan, isPaidPlan, getStripeClient, isStripeConfigured,
  *   getStripeWebhookSecret, STRIPE_API_VERSION, portalConfig, isPortalEnabled,
- *   isPortalOwnerEmail, PORTAL_PATH, portalRoute
+ *   isPortalOwnerEmail, PORTAL_PATH, portalRoute, PLATFORM_SETTING_GROUPS,
+ *   PLATFORM_SETTING_FIELDS, platformSettingGroup
  *
  * WHAT:  Barrel re-export for the `src/lib/config/*` modules.
  * WHY:   Single import surface (`@/lib/config`) so consumers don't depend on
@@ -47,7 +48,7 @@ export { captionLanguageCode, webLanguageCode } from './languages'
 export { SUBSCRIPTIONS_ENABLED, INTERNAL_PLAN_NAME } from './subscriptions'
 export { JOB_KIND_LABELS, JOB_STATUS_LABELS } from './job-kinds'
 export type { AppRouteKey } from './routes'
-export { REGISTRATION_OPEN } from './registration'
+export { isRegistrationOpen } from './registration'
 export {
   PLAN_KEYS,
   PLANS,
@@ -60,10 +61,16 @@ export {
 export type { PlanKey, PlanDefinition, BillingInterval } from './plans'
 export {
   getResendClient,
-  RESEND_DEFAULT_FROM,
+  resendDefaultFrom,
   isResendConfigured,
   isDevEmailFallbackActive,
 } from './resend'
+export {
+  PLATFORM_SETTING_GROUPS,
+  PLATFORM_SETTING_FIELDS,
+  PLATFORM_SETTINGS_REFRESH_MS,
+  platformSettingGroup,
+} from './platform-settings'
 export {
   portalConfig,
   isPortalEnabled,

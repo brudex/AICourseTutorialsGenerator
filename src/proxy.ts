@@ -15,12 +15,12 @@
  * WHY:   File is named `proxy.ts` (Next.js 16 rename of `middleware.ts`) and
  *        propagation goes on REQUEST headers via NextResponse.next({ request })
  *        — response headers would only reach the browser, not RSCs.
- * WHERE: Reads REGISTRATION_OPEN from src/lib/config/registration; downstream
+ * WHERE: Reads isRegistrationOpen from src/lib/config/registration; downstream
  *        RSCs and route handlers read the injected headers via `await headers()`.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { REGISTRATION_OPEN } from '@/lib/config/registration'
+import { isRegistrationOpen } from '@/lib/config/registration'
 import { AUTH_ROUTES } from '@/lib/config/auth-routes'
 
 
@@ -56,9 +56,9 @@ async function appProxy(request: NextRequest): Promise<NextResponse> {
   /* Registration closed — bounce sign-up attempts to the sign-in page so
    * the user sees a sensible page instead of an auth.ts error. The DB-level
    * hook in `auth.ts` is the real enforcement; this redirect just makes the
-   * UX cleaner. Toggled by NEXT_PUBLIC_REGISTRATION_OPEN. */
+   * UX cleaner. Toggled in portal settings (Sign up). */
   if (
-    !REGISTRATION_OPEN &&
+    !isRegistrationOpen() &&
     (pathname === AUTH_ROUTES.signUp || pathname.startsWith(`${AUTH_ROUTES.signUp}/`))
   ) {
     const url = request.nextUrl.clone()

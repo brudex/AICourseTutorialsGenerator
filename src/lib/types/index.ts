@@ -395,3 +395,33 @@ export {
   schoolSyncInfoSchema,
 } from './course-sync'
 export type { CourseSnapshot, CourseSnapshotAsset, CourseSyncResult, LoadedCourseSnapshot, SchoolListingValues, SchoolSyncInfo } from './course-sync'
+
+/* Operator settings managed in /portal/settings. */
+export {
+  PLATFORM_SETTING_KINDS,
+  PLATFORM_SETTING_JSON_SCHEMAS,
+  canvasOAuthAppsSchema,
+  platformSettingValueSchema,
+  platformSettingsGroupFormSchema,
+  updatePlatformSettingsSchema,
+} from './platform-settings'
+export type {
+  PlatformSettingKind,
+  PlatformSettingJsonShape,
+  PlatformSettingOption,
+  PlatformSettingFieldDefinition,
+  PlatformSettingGroupDefinition,
+  PlatformSettingGroupId,
+  PlatformSettingKey,
+  PlatformSettingKeyOf,
+  PlatformSettingSource,
+  PlatformSettingState,
+  PlatformSettingsView,
+  PlatformSettingsLoader,
+  PlatformSettingsStoreState,
+  PlatformSettingsFormValues,
+  UpdatePlatformSettingsValues,
+} from './platform-settings'
+
+/* Rate limiting. */
+export type { RateLimitWindow, RateLimiterSpec, RateLimiterCache } from './rate-limit'

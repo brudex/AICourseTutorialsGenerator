@@ -2,7 +2,7 @@ import 'server-only'
 
 /**
  * SOURCE OF TRUTH KEYWORDS: assertProviderUrlAllowed, SSRF guard,
- *   AI_ALLOW_PRIVATE_BASE_URLS, private network, blocked_url
+ *   aiAllowPrivateBaseUrls, private network, blocked_url
  *
  * WHAT:  Refuses provider base URLs that resolve to private, loopback,
  *        link-local, or metadata addresses — unless private URLs are allowed.
@@ -10,7 +10,8 @@ import 'server-only'
  *        classic SSRF vector (e.g. 169.254.169.254 cloud metadata). Checked at
  *        call time, not just on save, because DNS can change afterwards.
  *        Private URLs are allowed outside production (local Ollama during dev)
- *        and when AI_ALLOW_PRIVATE_BASE_URLS="true" (self-hosted installs).
+ *        and when the aiAllowPrivateBaseUrls portal setting is on (self
+ *        hosted installs).
  * WHERE: Called by src/lib/ai/adapters/openai-compatible.ts before every
  *        request, including testConnection.
  */
@@ -18,12 +19,11 @@ import 'server-only'
 import { lookup } from 'node:dns/promises'
 import { isIP } from 'node:net'
 
+import { platformSettingFlag } from '@/lib/platform-settings'
 import { AiGatewayError } from './errors'
 
 function privateUrlsAllowed(): boolean {
-  return (
-    process.env['AI_ALLOW_PRIVATE_BASE_URLS'] === 'true' || process.env['NODE_ENV'] !== 'production'
-  )
+  return platformSettingFlag('aiAllowPrivateBaseUrls') || process.env['NODE_ENV'] !== 'production'
 }
 
 function isPrivateIPv4(ip: string): boolean {

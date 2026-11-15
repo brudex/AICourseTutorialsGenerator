@@ -12,7 +12,7 @@
  * SOURCE OF TRUTH KEYWORDS: PortalSidebar, PORTAL_NAV
  *
  * WHAT:  Sidebar for the platform-admin (/portal) console — a small fixed nav
- *        (Overview, Organizations, Users, Audit logs) plus a "Back to app" link
+ *        (Overview, Organizations, Users, Audit logs, Settings) plus a "Back to app" link
  *        and the shared user menu.
  * WHY:   Portal nav is operator-level and small/fixed, so it's a static list
  *        here (not derived from RESOURCES, which describes tenant features).
@@ -28,6 +28,7 @@ import {
   ScrollText,
   ArrowLeft,
   ShieldCheck,
+  Settings,
 } from 'lucide-react'
 
 import {
@@ -48,6 +49,7 @@ const PORTAL_NAV = [
   { label: 'Organizations', href: portalRoute('/organizations'), icon: Building2, exact: false },
   { label: 'Users', href: portalRoute('/users'), icon: Users, exact: false },
   { label: 'Audit logs', href: portalRoute('/audit-logs'), icon: ScrollText, exact: false },
+  { label: 'Settings', href: portalRoute('/settings'), icon: Settings, exact: false },
 ] as const
 
 /* SERVER_PROVIDER_BRANCH: the account menu arrives already rendered from the

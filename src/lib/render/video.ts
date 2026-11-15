@@ -2,7 +2,7 @@ import 'server-only'
 
 /**
  * SOURCE OF TRUTH KEYWORDS: renderLectureVideo, FFmpeg, lecture MP4,
- *   VideoSceneInput, FFMPEG_PATH, VIDEO_RENDER_CONCURRENCY
+ *   VideoSceneInput, ffmpegPath, videoRenderConcurrency
  *
  * WHAT:  Assembles a lecture MP4 from its scenes: each scene's 1920×1080 still
  *        is shown for exactly its measured duration with short fades; each
@@ -20,9 +20,9 @@ import 'server-only'
  *        Scenes without narration get silent audio for their estimated
  *        length, so a course without a TTS model still gets watchable video.
  *        Encoding is CPU-heavy: a per-process semaphore caps concurrent
- *        renders (VIDEO_RENDER_CONCURRENCY, default 1) regardless of how many
+ *        renders (videoRenderConcurrency portal setting, default 1) regardless of how many
  *        tasks the worker runs. Uses the bundled ffmpeg-static binary unless
- *        FFMPEG_PATH points elsewhere.
+ *        the ffmpegPath portal setting points elsewhere.
  *        Sync (video-tutorial-maker rules): scene durations are rounded to
  *        whole frames first, so picture and sound use the identical
  *        timeline; narration is padded per scene to that duration before
@@ -40,6 +40,7 @@ import path from 'node:path'
 import { parseBuffer } from 'music-metadata'
 
 import { SLIDE_SIZE } from '@/lib/config/slide-theme'
+import { platformSettingNumber, platformSettingText } from '@/lib/platform-settings'
 
 export interface VideoSceneInput {
   still: Uint8Array
@@ -56,18 +57,20 @@ const SYNC_TOLERANCE_MS = 250
 
 function ffmpegPath(): string {
   return (
-    process.env['FFMPEG_PATH'] ||
+    platformSettingText('ffmpegPath') ||
     path.join(process.cwd(), 'node_modules', 'ffmpeg-static', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg')
   )
 }
 
-/* Per-process render slots. */
-const maxConcurrent = Math.max(1, Number.parseInt(process.env['VIDEO_RENDER_CONCURRENCY'] ?? '', 10) || 1)
+/* Per-process render slots. The limit is read on every acquire, so a change
+ * in portal settings applies to the next render; a woken waiter re-checks. */
 let active = 0
 const waiting: Array<() => void> = []
 
 async function withRenderSlot<T>(work: () => Promise<T>): Promise<T> {
-  if (active >= maxConcurrent) await new Promise<void>((resolve) => waiting.push(resolve))
+  while (active >= platformSettingNumber('videoRenderConcurrency')) {
+    await new Promise<void>((resolve) => waiting.push(resolve))
+  }
   active++
   try {
     return await work()
@@ -87,7 +90,7 @@ function runFfmpeg(args: readonly string[]): Promise<void> {
     const timer = setTimeout(() => child.kill('SIGKILL'), FFMPEG_TIMEOUT_MS)
     child.on('error', (error) => {
       clearTimeout(timer)
-      reject(new Error(`Could not start FFmpeg (${error.message}). Install it or set FFMPEG_PATH.`))
+      reject(new Error(`Could not start FFmpeg (${error.message}). Install it or set the FFmpeg path in portal settings under Rendering.`))
     })
     child.on('close', (code) => {
       clearTimeout(timer)

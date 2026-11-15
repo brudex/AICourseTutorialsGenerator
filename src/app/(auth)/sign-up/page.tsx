@@ -10,16 +10,17 @@
  * SOURCE OF TRUTH KEYWORDS: SignUpPage
  *
  * WHAT:  /sign-up route — renders AuthShell + AuthForm in sign-up mode.
- *        Hidden behind the proxy.ts redirect when REGISTRATION_OPEN=false,
- *        so reaching this file implies registration is open.
+ *        Redirects to sign in when sign up is closed in portal settings
+ *        (the proxy does the same; this check covers a direct render).
  * WHY:   Mirrors sign-in/page.tsx; keeps every page in (auth) cookie-cutter.
- * WHERE: Bounced to /sign-in by src/proxy.ts when REGISTRATION_OPEN=false.
+ * WHERE: Bounced to /sign-in by src/proxy.ts when isRegistrationOpen() is false.
  */
 
 import type { Metadata } from 'next'
+import { redirect } from 'next/navigation'
 
 import { AuthForm, AuthShell } from '@/components/global/auth'
-import { resolveAuthCallback } from '@/lib/config'
+import { AUTH_ROUTES, isRegistrationOpen, resolveAuthCallback } from '@/lib/config'
 
 export const metadata: Metadata = {
   title: 'Create account',
@@ -30,6 +31,8 @@ export default async function SignUpPage({
 }: {
   searchParams: Promise<{ callbackURL?: string | string[] }>
 }) {
+  if (!isRegistrationOpen()) redirect(AUTH_ROUTES.signIn)
+
   /* RETURN_TO_AFTER_AUTH: whoever sent the visitor here may have said where to
    * put them afterwards — an invitation link is the case that matters, since
    * dropping it strands an invitee on the dashboard with no idea they were

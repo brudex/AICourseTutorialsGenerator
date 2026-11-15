@@ -1,22 +1,23 @@
 import 'server-only'
 
 /**
- * SOURCE OF TRUTH KEYWORDS: localStorageDriver, STORAGE_LOCAL_DIR, local disk
+ * SOURCE OF TRUTH KEYWORDS: localStorageDriver, storageLocalDir, local disk
  *   storage, path traversal guard
  *
- * WHAT:  Storage driver that keeps objects as files under STORAGE_LOCAL_DIR
+ * WHAT:  Storage driver that keeps objects as files under the storageLocalDir setting
  *        (default `.storage/` in the project, gitignored).
  * WHY:   Zero-setup development. Content type is derived from the file
  *        extension (keys always carry one), so no sidecar metadata is needed.
  *        Every key is resolved and checked to stay inside the root, so a
  *        malformed key can never read or delete files elsewhere on disk.
  *        Not for production: files live on one machine's disk.
- * WHERE: Selected by getStorage() when STORAGE_DRIVER is "local" or unset.
+ * WHERE: Selected by getStorage() when the storageDriver setting is "local".
  */
 
 import { mkdir, readFile, rm, writeFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 
+import { platformSettingText } from '@/lib/platform-settings'
 import type { StorageDriver } from '@/lib/types'
 
 const CONTENT_TYPES: Record<string, string> = {
@@ -34,7 +35,7 @@ const CONTENT_TYPES: Record<string, string> = {
 }
 
 function root(): string {
-  return path.resolve(process.env['STORAGE_LOCAL_DIR'] || '.storage')
+  return path.resolve(platformSettingText('storageLocalDir'))
 }
 
 function resolveKey(key: string): string {

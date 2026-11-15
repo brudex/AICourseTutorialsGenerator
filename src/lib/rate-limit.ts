@@ -8,12 +8,13 @@
 
 /**
  * SOURCE OF TRUTH KEYWORDS: apiLimiter, authLimiter, getResourceLimiter,
- *   checkRateLimit, buildRateLimitHeaders, getClientIp, RateLimitResult
+ *   checkRateLimit, buildRateLimitHeaders, getClientIp, RateLimitResult,
+ *   RateLimiterSpec
  *
  * WHAT:  Upstash-backed rate limiter factories, the global limiter checker,
  *        standard `RateLimit-*` header builder, and the trusted-edge client-IP
  *        resolver.
- * WHY:   Redis is OPTIONAL — when unconfigured every limiter is null and
+ * WHY:   Redis is OPTIONAL (portal settings → Security) — when unconfigured
  *        checkRateLimit fails open; rate limiting is a guardrail, not the only
  *        line of defense, and refusing all traffic on a Redis outage is almost
  *        always worse than letting more requests through.
@@ -22,49 +23,70 @@
  *        src/lib/request-forensics.ts (getClientIp).
  */
 
-/* Upstash-backed rate limiting. Redis is OPTIONAL — when unconfigured every
- * limiter is null and checkRateLimit fails open. Rate limiting is a guardrail,
+/* Upstash-backed rate limiting. Redis is OPTIONAL — when unconfigured
+ * checkRateLimit fails open. Rate limiting is a guardrail,
  * not the only line of defense; refusing all traffic on a Redis outage is
  * almost always worse than letting more requests through. */
 
 import { Ratelimit } from '@upstash/ratelimit'
 import { Redis } from '@upstash/redis'
 
-const GLOBAL_REDIS_KEY = Symbol.for('app.upstash.redis')
+import { platformSettingText } from '@/lib/platform-settings'
+import type { RateLimiterCache, RateLimiterSpec, RateLimitWindow } from '@/lib/types'
 
-type GlobalWithRedis = typeof globalThis & {
-  [GLOBAL_REDIS_KEY]?: Redis | null
+/**
+ * SOURCE OF TRUTH KEYWORDS: RateLimiterSpec, defineLimiter, resolveLimiter,
+ *   upstashRedisRestUrl, upstashRedisRestToken, hot reload rate limit
+ *
+ * WHAT:  A limiter is declared as a spec (prefix, count, window) and turned
+ *        into an Upstash Ratelimit only when checked.
+ * WHY:   The Redis URL and token are portal settings, so they can change while
+ *        the app runs. Resolving at check time against a client cached by
+ *        URL + token means turning rate limiting on, off or onto a new database
+ *        applies without a restart. Missing settings resolve to null → fail open.
+ * WHERE: checkRateLimit below; specs exported as apiLimiter, authLimiter and
+ *        getResourceLimiter.
+ */
+const GLOBAL_LIMITERS_KEY = Symbol.for('app.upstash.limiters')
+
+type GlobalWithLimiters = typeof globalThis & {
+  [GLOBAL_LIMITERS_KEY]?: RateLimiterCache
 }
 
-function resolveRedisClient(): Redis | null {
-  const globalWithRedis = globalThis as GlobalWithRedis
-  if (GLOBAL_REDIS_KEY in globalWithRedis) {
-    return globalWithRedis[GLOBAL_REDIS_KEY] ?? null
+function limiterCache(): RateLimiterCache {
+  const holder = globalThis as GlobalWithLimiters
+  const url = platformSettingText('upstashRedisRestUrl')
+  const token = platformSettingText('upstashRedisRestToken')
+  const fingerprint = `${url}\n${token}`
+  if (holder[GLOBAL_LIMITERS_KEY]?.fingerprint !== fingerprint) {
+    holder[GLOBAL_LIMITERS_KEY] = {
+      fingerprint,
+      redis: url && token ? new Redis({ url, token }) : null,
+      limiters: new Map(),
+    }
   }
-  const url = process.env['UPSTASH_REDIS_REST_URL']
-  const token = process.env['UPSTASH_REDIS_REST_TOKEN']
-  if (!url || !token) {
-    globalWithRedis[GLOBAL_REDIS_KEY] = null
-    return null
-  }
-  globalWithRedis[GLOBAL_REDIS_KEY] = new Redis({ url, token })
-  return globalWithRedis[GLOBAL_REDIS_KEY]
+  return holder[GLOBAL_LIMITERS_KEY]
 }
 
-const redis: Redis | null = resolveRedisClient()
+function resolveLimiter(spec: RateLimiterSpec): Ratelimit | null {
+  const cache = limiterCache()
+  if (!cache.redis) return null
+  const cacheKey = `${spec.prefix}:${spec.count}:${spec.window}`
+  let limiter = cache.limiters.get(cacheKey)
+  if (!limiter) {
+    limiter = new Ratelimit({
+      redis: cache.redis,
+      limiter: Ratelimit.slidingWindow(spec.count, spec.window),
+      prefix: spec.prefix,
+      analytics: false,
+    })
+    cache.limiters.set(cacheKey, limiter)
+  }
+  return limiter
+}
 
-function buildLimiter(
-  prefix: string,
-  count: number,
-  window: `${number} ${'s' | 'm' | 'h' | 'd'}`
-): Ratelimit | null {
-  if (!redis) return null
-  return new Ratelimit({
-    redis,
-    limiter: Ratelimit.slidingWindow(count, window),
-    prefix,
-    analytics: false,
-  })
+function defineLimiter(prefix: string, count: number, window: RateLimitWindow): RateLimiterSpec {
+  return { prefix, count, window }
 }
 
 /**
@@ -73,9 +95,9 @@ function buildLimiter(
  * WHAT:  Global API rate limiter (100 / 10s sliding window).
  * WHY:   Per-IP cap for general API traffic — broad guardrail, not a per-route
  *        check; per-resource overrides live on RESOURCES[x].rateLimit.
- * WHERE: Applied at src/proxy.ts ingress.
+ * WHERE: tRPC route handler and baseProcedure.
  */
-export const apiLimiter = buildLimiter('rl:api', 100, '10 s')
+export const apiLimiter = defineLimiter('rl:api', 100, '10 s')
 
 /**
  * SOURCE OF TRUTH KEYWORDS: authLimiter
@@ -83,34 +105,25 @@ export const apiLimiter = buildLimiter('rl:api', 100, '10 s')
  * WHAT:  Tight IP-keyed rate limiter (10 / 60s) for auth endpoints.
  * WHY:   Brute-force and credential-stuffing protection — far stricter than
  *        the general apiLimiter.
- * WHERE: Applied at src/proxy.ts for /api/auth/* routes.
+ * WHERE: src/app/api/auth/[...all]/route.ts.
  */
-/* Tight, IP-keyed: brute-force / credential stuffing. */
-export const authLimiter = buildLimiter('rl:auth', 10, '60 s')
-
-const resourceLimiters = new Map<string, Ratelimit | null>()
+export const authLimiter = defineLimiter('rl:auth', 10, '60 s')
 
 /**
  * SOURCE OF TRUTH KEYWORDS: getResourceLimiter
  *
- * WHAT:  Lazily builds and memoises a per-resource/action sliding-window limiter.
- * WHY:   Allows RESOURCES[x].rateLimit overrides to materialise into distinct
- *        Upstash keys without eager construction at module load.
+ * WHAT:  The limiter spec for one resource/action override.
+ * WHY:   Lets RESOURCES[x].rateLimit overrides materialise into distinct
+ *        Upstash keys; the Ratelimit itself is built and cached on first check.
  * WHERE: Called by protectedProcedure when a RESOURCES rateLimit override matches.
  */
 export function getResourceLimiter(
   resource: string,
   action: string,
   count: number,
-  window: `${number} ${'s' | 'm' | 'h' | 'd'}`
-): Ratelimit | null {
-  const key = `${resource}.${action}`
-  if (resourceLimiters.has(key)) {
-    return resourceLimiters.get(key) ?? null
-  }
-  const limiter = buildLimiter(`rl:res:${key}`, count, window)
-  resourceLimiters.set(key, limiter)
-  return limiter
+  window: RateLimitWindow
+): RateLimiterSpec {
+  return defineLimiter(`rl:res:${resource}.${action}`, count, window)
 }
 
 export interface RateLimitResult {
@@ -124,15 +137,16 @@ export interface RateLimitResult {
  * SOURCE OF TRUTH KEYWORDS: checkRateLimit, RateLimitResult
  *
  * WHAT:  Runs a limiter against an identifier, returning a structured result.
- * WHY:   Fails open on null limiter or Redis exception — rate limiting is a
+ * WHY:   Fails open when Redis is not configured or throws — rate limiting is a
  *        guardrail, not authentication; refusing traffic on Redis outage is
  *        almost always worse than letting it through.
  * WHERE: Used by src/proxy.ts and the per-procedure rate-limit path.
  */
 export async function checkRateLimit(
-  limiter: Ratelimit | null,
+  spec: RateLimiterSpec,
   identifier: string
 ): Promise<RateLimitResult> {
+  const limiter = resolveLimiter(spec)
   if (!limiter) {
     return { allowed: true, limit: 0, remaining: 0, resetAt: 0 }
   }

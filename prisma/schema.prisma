@@ -1378,3 +1378,24 @@ model PublishedItem {
 /// Names are snapshots so later renames do not change an issued certificate.
 
 /// SchoolApiKey — server to server key for external enrollment; hash only.
+
+// ============================================================================
+// SOURCE OF TRUTH KEYWORDS: PlatformSetting, platform settings, runtime config,
+//   PLATFORM_SETTING_GROUPS, portal settings, hot reload configuration
+// ============================================================================
+
+/// PlatformSetting — one operator setting edited in /portal/settings (email,
+/// publishing apps, storage, rendering, worker, security, sign up). `key` is a
+/// PLATFORM_SETTING_GROUPS field key; `value` is the serialized value, or an
+/// AES-256-GCM ciphertext (src/lib/ai/crypto.ts) when `isSecret`. The app reads
+/// these at runtime, so a change takes effect without a restart.
+model PlatformSetting {
+  key         String   @id
+  value       String
+  isSecret    Boolean  @default(false)
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("platform_setting")
+}

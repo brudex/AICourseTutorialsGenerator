@@ -1,10 +1,10 @@
 import 'server-only'
 
 /**
- * SOURCE OF TRUTH KEYWORDS: getStorage, STORAGE_DRIVER, storage keys,
+ * SOURCE OF TRUTH KEYWORDS: getStorage, storageDriver, storage keys,
  *   courseStoragePrefix, sceneAssetKey
  *
- * WHAT:  Resolves the active storage driver from STORAGE_DRIVER ("local" by
+ * WHAT:  Resolves the active storage driver from the storageDriver portal setting ("local" by
  *        default, "s3" in production) and defines how storage keys are laid
  *        out.
  * WHY:   One place owns the key layout so everything for a course lives under
@@ -18,12 +18,14 @@ import 'server-only'
 
 import type { MaterialKind } from '@/generated/prisma'
 import { COURSE_MATERIALS } from '@/lib/config/course-materials'
+import { platformSettingText } from '@/lib/platform-settings'
 import type { StorageDriver } from '@/lib/types'
 import { localStorageDriver } from './local'
 import { s3StorageDriver } from './s3'
 
+/* Driver chosen per call from portal settings (Media storage). */
 export function getStorage(): StorageDriver {
-  return process.env['STORAGE_DRIVER'] === 's3' ? s3StorageDriver : localStorageDriver
+  return platformSettingText('storageDriver') === 's3' ? s3StorageDriver : localStorageDriver
 }
 
 export function courseStoragePrefix(organizationId: string, courseId: string): string {

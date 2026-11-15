@@ -1,8 +1,8 @@
 import 'server-only'
 
 /**
- * SOURCE OF TRUTH KEYWORDS: s3StorageDriver, S3-compatible storage, S3_BUCKET,
- *   S3_ENDPOINT, Cloudflare R2, MinIO, presigned URL
+ * SOURCE OF TRUTH KEYWORDS: s3StorageDriver, S3-compatible storage, s3Bucket,
+ *   s3Endpoint, Cloudflare R2, MinIO, presigned URL
  *
  * WHAT:  Storage driver for any S3-compatible service — AWS S3, Cloudflare R2,
  *        MinIO, Backblaze B2, DigitalOcean Spaces.
@@ -10,8 +10,8 @@ import 'server-only'
  *        files (lecture videos). Downloads are served by short-lived presigned
  *        URLs so video bytes never pass through the app server. Objects stay
  *        private in the bucket; the asset route decides who gets a URL.
- *        S3_ENDPOINT + S3_FORCE_PATH_STYLE make non-AWS services work.
- * WHERE: Selected by getStorage() when STORAGE_DRIVER="s3".
+ *        The s3Endpoint and s3ForcePathStyle settings make non-AWS services work.
+ * WHERE: Selected by getStorage() when the storageDriver setting is "s3".
  */
 
 import {
@@ -25,33 +25,35 @@ import {
 } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 
-import type { StorageDriver } from '@/lib/types'
+import { platformSettingFlag, platformSettingText } from '@/lib/platform-settings'
+import type { PlatformSettingKeyOf, StorageDriver } from '@/lib/types'
 
-function requireEnv(name: string): string {
-  const value = process.env[name]
-  if (!value) throw new Error(`${name} is required when STORAGE_DRIVER="s3".`)
+function requireSetting(key: PlatformSettingKeyOf<'text'>, label: string): string {
+  const value = platformSettingText(key)
+  if (!value) throw new Error(`${label} is required for S3 storage. Set it in portal settings under Media storage.`)
   return value
 }
 
-let client: S3Client | null = null
+/* Rebuilt when any connection setting changes in the portal. */
+let client: { fingerprint: string; s3: S3Client } | null = null
 
 function getClient(): S3Client {
-  if (!client) {
-    const endpoint = process.env['S3_ENDPOINT']
-    client = new S3Client({
-      region: process.env['S3_REGION'] || 'auto',
-      ...(endpoint ? { endpoint } : {}),
-      forcePathStyle: process.env['S3_FORCE_PATH_STYLE'] === 'true',
-      credentials: {
-        accessKeyId: requireEnv('S3_ACCESS_KEY_ID'),
-        secretAccessKey: requireEnv('S3_SECRET_ACCESS_KEY'),
-      },
-    })
+  const endpoint = platformSettingText('s3Endpoint')
+  const options = {
+    region: platformSettingText('s3Region') || 'auto',
+    ...(endpoint ? { endpoint } : {}),
+    forcePathStyle: platformSettingFlag('s3ForcePathStyle'),
+    credentials: {
+      accessKeyId: requireSetting('s3AccessKeyId', 'Access key ID'),
+      secretAccessKey: requireSetting('s3SecretAccessKey', 'Secret access key'),
+    },
   }
-  return client
+  const fingerprint = JSON.stringify(options)
+  if (client?.fingerprint !== fingerprint) client = { fingerprint, s3: new S3Client(options) }
+  return client.s3
 }
 
-const bucket = () => requireEnv('S3_BUCKET')
+const bucket = () => requireSetting('s3Bucket', 'Bucket')
 
 export const s3StorageDriver: StorageDriver = {
   id: 's3',

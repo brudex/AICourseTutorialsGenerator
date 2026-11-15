@@ -34,7 +34,7 @@ import { headers } from 'next/headers'
 import { prisma } from '@/lib/config'
 import { ac, roles } from '@/lib/better-auth/access-control'
 import { APP_URL, APP_NAME, APP_DOMAIN } from '@/lib/config/branding'
-import { REGISTRATION_OPEN } from '@/lib/config/registration'
+import { isRegistrationOpen } from '@/lib/config/registration'
 import { isDevEmailFallbackActive } from '@/lib/config/resend'
 import { isDesktopInstall } from '@/lib/config/desktop'
 import {
@@ -135,7 +135,7 @@ export const auth = betterAuth({
       create: {
         /* Closed-registration gate — last line of defense even if UI is bypassed. */
         before: async () => {
-          if (!REGISTRATION_OPEN) {
+          if (!isRegistrationOpen()) {
             throw new Error(
               'Registration is currently closed. This platform is invitation-only.'
             )

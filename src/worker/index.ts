@@ -1,8 +1,8 @@
 import 'server-only'
 
 /**
- * SOURCE OF TRUTH KEYWORDS: generation worker, workerLoop, WORKER_CONCURRENCY,
- *   WORKER_POLL_INTERVAL_MS, graceful shutdown, stale task sweep, npm run worker
+ * SOURCE OF TRUTH KEYWORDS: generation worker, workerLoop, workerConcurrency,
+ *   workerPollIntervalMs, graceful shutdown, stale task sweep, npm run worker
  *
  * WHAT:  The long-running process that executes generation tasks:
  *        poll → claim READY tasks (SKIP LOCKED) → run up to N concurrently →
@@ -22,17 +22,16 @@ import { randomUUID } from 'node:crypto'
 
 import { prisma } from '@/lib/config'
 import { recoverStaleTasks } from '@/lib/generation'
+import { platformSettingNumber } from '@/lib/platform-settings'
+import { ensurePlatformSettings } from '@/lib/platform-settings/loader'
 import { closeRenderBrowser } from '@/lib/render'
 import * as generationService from '@/services/generation.service'
 import { runClaimedTask } from './run-task'
 
-function readPositiveInt(name: string, fallback: number): number {
-  const value = Number.parseInt(process.env[name] ?? '', 10)
-  return Number.isFinite(value) && value > 0 ? value : fallback
-}
-
-const CONCURRENCY = readPositiveInt('WORKER_CONCURRENCY', 4)
-const POLL_INTERVAL_MS = readPositiveInt('WORKER_POLL_INTERVAL_MS', 1_000)
+/* Read every loop turn from portal settings (Background worker), so a new
+ * concurrency or poll interval applies without restarting the worker. */
+const concurrency = () => platformSettingNumber('workerConcurrency')
+const pollIntervalMs = () => platformSettingNumber('workerPollIntervalMs')
 /* Longer than the slowest legitimate task: a 12,000 token answer may take
  * five minutes per call, and a repair turn doubles that. Reclaiming sooner
  * would run a live task twice. */
@@ -87,6 +86,8 @@ async function releaseOrphanedTasks(): Promise<void> {
 }
 
 async function loop(): Promise<void> {
+  await ensurePlatformSettings()
+  log(`started ${workerId} — concurrency ${concurrency()}, poll ${pollIntervalMs()}ms`)
   await releaseOrphanedTasks()
   let lastSweep = 0
   while (!stopping) {
@@ -97,7 +98,7 @@ async function loop(): Promise<void> {
 
     let claimed: string[] = []
     try {
-      claimed = await generationService.claimReadyTasks(prisma, workerId, CONCURRENCY - inFlight.size)
+      claimed = await generationService.claimReadyTasks(prisma, workerId, Math.max(0, concurrency() - inFlight.size))
     } catch (error) {
       log(`claim failed: ${error instanceof Error ? error.message : String(error)}`)
     }
@@ -108,8 +109,8 @@ async function loop(): Promise<void> {
     }
 
     /* Idle or saturated → wait; otherwise loop straight back for more work. */
-    if (claimed.length === 0 || inFlight.size >= CONCURRENCY) {
-      await Promise.race([sleep(POLL_INTERVAL_MS), ...inFlight])
+    if (claimed.length === 0 || inFlight.size >= concurrency()) {
+      await Promise.race([sleep(pollIntervalMs()), ...inFlight])
     }
   }
 }
@@ -128,7 +129,6 @@ async function shutdown(signal: string): Promise<void> {
 process.on('SIGINT', () => void shutdown('SIGINT'))
 process.on('SIGTERM', () => void shutdown('SIGTERM'))
 
-log(`started ${workerId} — concurrency ${CONCURRENCY}, poll ${POLL_INTERVAL_MS}ms`)
 loop().catch(async (error) => {
   log(`fatal: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`)
   await prisma.$disconnect()

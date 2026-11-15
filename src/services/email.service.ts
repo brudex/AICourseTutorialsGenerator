@@ -28,7 +28,7 @@ import * as React from 'react'
 import { render } from '@react-email/render'
 import {
   getResendClient,
-  RESEND_DEFAULT_FROM,
+  resendDefaultFrom,
   isResendConfigured,
 } from '@/lib/config/resend'
 import {
@@ -69,7 +69,7 @@ async function renderAndSend(args: {
 }): Promise<EmailSendResult> {
   if (!isResendConfigured()) {
     console.warn(
-      `[email] RESEND_API_KEY not set — skipping "${args.subject}" to ${args.to}.`
+      `[email] Resend API key not set in portal settings — skipping "${args.subject}" to ${args.to}.`
     )
     if (args.devLink) {
       recordDevEmail({ to: args.to, subject: args.subject, link: args.devLink })
@@ -83,7 +83,7 @@ async function renderAndSend(args: {
   try {
     const html = await render(args.template)
     const { data, error } = await client.emails.send({
-      from: RESEND_DEFAULT_FROM,
+      from: resendDefaultFrom(),
       to: args.to,
       subject: args.subject,
       html,
