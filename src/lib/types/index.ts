@@ -46,6 +46,7 @@ export type {
   ResetPasswordValues,
   UpdateProfileValues,
   ChangePasswordValues,
+  AuthRuntimeConfig,
 } from './auth'
 export { createOrganizationSchema, updateOrganizationSettingsSchema, organizationNameFormSchema } from './organization'
 export type {
@@ -408,6 +409,8 @@ export {
 export type {
   PlatformSettingKind,
   PlatformSettingJsonShape,
+  OAuthApp,
+  BrandingValues,
   PlatformSettingOption,
   PlatformSettingFieldDefinition,
   PlatformSettingGroupDefinition,

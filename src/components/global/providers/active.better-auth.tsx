@@ -33,6 +33,7 @@ import { BetterAuthMemberManagement } from './better-auth/member-management'
 import { BetterAuthOnboarding } from './better-auth/onboarding'
 import { BetterAuthOrganizationAdvanced } from './better-auth/organization-advanced'
 import { BetterAuthAccountScreen } from './better-auth/account-screen'
+import { isGoogleSignInEnabled } from '@/lib/config/sign-in'
 import type { AuthFormMode } from '@/lib/types'
 
 /* Better Auth needs no React context of its own. */
@@ -56,5 +57,6 @@ export function ActiveAuthScreen({
   mode: AuthFormMode
   callbackURL: Route
 }) {
-  return <AuthForm mode={mode} callbackURL={callbackURL} />
+  /* Server side: the Google button follows the portal setting per request. */
+  return <AuthForm mode={mode} callbackURL={callbackURL} googleEnabled={isGoogleSignInEnabled()} />
 }

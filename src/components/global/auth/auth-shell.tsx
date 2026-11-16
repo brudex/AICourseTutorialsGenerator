@@ -35,7 +35,7 @@ import * as React from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 
-import { APP_LOGO, APP_NAME } from '@/lib/config/branding'
+import { APP_LOGO, appName } from '@/lib/config/branding'
 
 export interface AuthShellProps {
   children: React.ReactNode
@@ -48,15 +48,15 @@ export function AuthShell({ children, footer }: AuthShellProps) {
     <div className="flex min-h-svh flex-col items-center justify-center bg-linear-135 from-brand-light via-primary via-45% to-brand p-6 md:p-10">
       <div className="flex w-full max-w-md flex-col gap-6">
         <div className="rounded-2xl bg-card p-8 shadow-2xl sm:p-10">
-          <Link href="/" className="mx-auto mb-6 flex w-fit flex-col items-center gap-3" aria-label={APP_NAME}>
+          <Link href="/" className="mx-auto mb-6 flex w-fit flex-col items-center gap-3" aria-label={appName()}>
             <Image src={APP_LOGO} alt="" width={56} height={56} priority />
-            <span className="text-sm font-medium text-muted-foreground">{APP_NAME}</span>
+            <span className="text-sm font-medium text-muted-foreground">{appName()}</span>
           </Link>
           {children}
         </div>
         {footer ? <div className="text-center text-sm text-primary-foreground">{footer}</div> : null}
         <p className="text-center text-xs text-primary-foreground/80">
-          © {new Date().getFullYear()} {APP_NAME}
+          © {new Date().getFullYear()} {appName()}
         </p>
       </div>
     </div>

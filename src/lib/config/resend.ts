@@ -20,7 +20,7 @@
  */
 
 import { Resend } from 'resend'
-import { APP_NAME } from '@/lib/config/branding'
+import { appName } from '@/lib/config/branding'
 import { platformSettingText } from '@/lib/platform-settings'
 
 /**
@@ -33,7 +33,7 @@ import { platformSettingText } from '@/lib/platform-settings'
  * WHERE: Default `from` in src/services/email.service.ts.
  */
 export function resendDefaultFrom(): string {
-  return `${APP_NAME} <${platformSettingText('resendFromEmail')}>`
+  return `${appName()} <${platformSettingText('resendFromEmail')}>`
 }
 
 /**

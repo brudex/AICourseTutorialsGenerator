@@ -23,6 +23,7 @@
  */
 
 import { z } from 'zod'
+import type { OAuthApp } from './platform-settings'
 
 /* Server (auth.ts) does not impose a max; Better Auth's own bcrypt path
  * caps at 72 bytes, but most users will not see that. The 8-character
@@ -176,3 +177,17 @@ export const changePasswordSchema = z
   })
 
 export type ChangePasswordValues = z.infer<typeof changePasswordSchema>
+
+/**
+ * SOURCE OF TRUTH KEYWORDS: AuthRuntimeConfig, getAuth fingerprint
+ *
+ * WHAT:  The runtime settings a Better Auth instance is built from.
+ * WHY:   They come from portal settings; getAuth rebuilds the instance when
+ *        this changes.
+ * WHERE: src/lib/better-auth/auth.ts (buildAuth, getAuth).
+ */
+export interface AuthRuntimeConfig {
+  google: OAuthApp | null
+  appName: string
+  requireEmailVerification: boolean
+}

@@ -30,7 +30,7 @@ import {
   Preview,
   Text,
 } from '@react-email/components'
-import { APP_NAME } from '@/lib/config/branding'
+import { appName } from '@/lib/config/branding'
 
 /**
  * SOURCE OF TRUTH KEYWORDS: emailStyles
@@ -137,11 +137,11 @@ export function BaseLayout({
       <Preview>{preview}</Preview>
       <Body style={emailStyles.body}>
         <Container style={emailStyles.container}>
-          <Text style={emailStyles.brand}>{APP_NAME}</Text>
+          <Text style={emailStyles.brand}>{appName()}</Text>
           {children}
           <Hr style={emailStyles.hr} />
           <Text style={emailStyles.footer}>
-            © {APP_NAME}. If you didn’t expect this email, you can safely ignore it.
+            © {appName()}. If you didn’t expect this email, you can safely ignore it.
           </Text>
         </Container>
       </Body>

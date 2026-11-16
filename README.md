@@ -13,8 +13,8 @@ Settings live in one of two places:
 
 | Where | What | Change takes effect |
 |---|---|---|
-| `.env` (server file) | What the app needs before it can read the database: database address, auth secret, encryption key, portal owner, plus sign in with Google, branding and plans | After a restart |
-| **Portal → Settings** (`/portal/settings`) | Email, publishing apps, media storage, rendering, worker, rate limiting and sign up | Within about 5 seconds, no restart |
+| `.env` (server file) | What the app needs before it can read the database: database address, auth secret, encryption key, portal owner, and the app address | After a restart |
+| **Portal → Settings** (`/portal/settings`) | Email, publishing apps, media storage, rendering, worker, rate limiting, sign up, Google sign in and branding | Within about 5 seconds, no restart |
 
 Portal settings are stored in the database. API keys and passwords saved there are encrypted with `AI_KEYS_ENCRYPTION_KEY` and never shown again in full.
 
@@ -51,11 +51,9 @@ To manage settings from the browser, turn on the platform admin console:
 | `PORTAL_INITIAL_OWNER_EMAIL` | The email you will sign up with. That account becomes the platform admin. |
 | `PORTAL_PATH_PREFIX` | Optional, defaults to `/portal` |
 
-Optional `.env` settings that still need a restart:
+Optional: set `NEXT_PUBLIC_APP_DOMAIN` (for example `yourdomain.com`) when the app is served from several subdomains, so sign in cookies are shared. This needs a restart.
 
-- **Sign in with Google:** `NEXT_PUBLIC_GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
-- **Branding:** `NEXT_PUBLIC_APP_NAME`, `NEXT_PUBLIC_APP_DESCRIPTION`, `NEXT_PUBLIC_APP_DOMAIN`
-- **Subscriptions:** `NEXT_PUBLIC_SUBSCRIPTIONS_ENABLED`, the Stripe keys and the plan names, prices and trial days
+Subscriptions and Stripe billing are switched off in this build, so the Stripe and plan variables in `.env.example` have no effect.
 
 ## 4. Create the database tables
 
@@ -95,7 +93,8 @@ Each section saves on its own. A **From server file** badge means the value curr
 | **Rendering** | FFmpeg path, browser path, videos at once | Leave paths blank to use the bundled FFmpeg and an installed browser. A new browser path applies the next time the browser starts. |
 | **Background worker** | Tasks at once, check for work interval | Applies on the worker's next loop. |
 | **Security** | Upstash Redis URL and token, allow private AI addresses | Without Upstash, requests are not rate limited. Allow private addresses for a local model server such as Ollama in production. |
-| **Sign up** | Open sign up | Turn off to make the platform invitation only. |
+| **Sign up and sign in** | Open sign up, Google sign in client ID and secret | Turn sign up off to make the platform invitation only. For Google, register `<app address>/api/auth/callback/google` as the redirect address. Continue with Google appears once both are saved. |
+| **Branding** | App name, description | Shown in the sidebar, sign in pages, emails and browser tabs. The logo file is `public/brand/logo.png`. |
 
 ## Production
 

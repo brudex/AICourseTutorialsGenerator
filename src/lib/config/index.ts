@@ -7,8 +7,8 @@
  */
 
 /**
- * SOURCE OF TRUTH KEYWORDS: prisma, DbClient, APP_NAME, APP_URL, APP_DOMAIN,
- *   APP_DESCRIPTION, APP_METADATA_BASE, BRANDING, AUTH_ROUTES,
+ * SOURCE OF TRUTH KEYWORDS: prisma, DbClient, appName, APP_URL, APP_DOMAIN,
+ *   appDescription, googleSignInApp, APP_METADATA_BASE, BRANDING, AUTH_ROUTES,
  *   isRegistrationOpen, PLANS, PlanKey, PlanDefinition, resend,
  *   AUTH_CALLBACK_PARAM, resolveAuthCallback, authRouteWithCallback,
  *   getResendClient, resendDefaultFrom, isResendConfigured, ROUTES,
@@ -29,13 +29,14 @@
 export { prisma } from './prisma'
 export type { DbClient } from './prisma'
 export {
-  APP_NAME,
+  appName,
+  appDescription,
   APP_URL,
   APP_DOMAIN,
-  APP_DESCRIPTION,
   APP_METADATA_BASE,
   BRANDING,
 } from './branding'
+export { googleSignInApp, isGoogleSignInEnabled } from './sign-in'
 export {
   AUTH_ROUTES,
   AUTH_CALLBACK_PARAM,

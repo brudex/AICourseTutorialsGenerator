@@ -6,14 +6,17 @@
  * Web Prodigies LLC. See the LICENSE file in the root of this repository.
  */
 
+import { platformSettingText } from '@/lib/platform-settings'
+
 /**
- * SOURCE OF TRUTH KEYWORDS: APP_NAME, APP_DESCRIPTION, APP_URL,
+ * SOURCE OF TRUTH KEYWORDS: appName, appDescription, APP_URL,
  *   APP_METADATA_BASE, APP_DOMAIN, BRANDING
  *
  * WHAT:  Public app identity strings + URL primitives plus the consolidated
  *        BRANDING object (upgrade-modal copy, metadata base).
- * WHY:   One file resolves env-driven branding so the rest of the app reads
- *        constants, not `process.env`, keeping client/server output stable.
+ * WHY:   One file resolves branding. The name and description are portal
+ *        settings (read at runtime); the URL and domain stay in the server file
+ *        because sign in cookies and trusted origins are built from them.
  *        BRANDING holds visual / textual identity ONLY — no routes or
  *        redirect targets. Sign-in route lives in AUTH_ROUTES
  *        (src/lib/config/auth-routes.ts); product nav routes live on the
@@ -22,10 +25,24 @@
  *        layouts, auth.ts, and the upgrade-modal UI.
  */
 
-export const APP_NAME = process.env['NEXT_PUBLIC_APP_NAME'] ?? 'Penrose Studio'
+/**
+ * SOURCE OF TRUTH KEYWORDS: appName, appDescription, APP_NAME, APP_DESCRIPTION,
+ *   branding portal setting
+ *
+ * WHAT:  The app name and description, from portal settings (Branding).
+ * WHY:   Read per call so a rename applies without a restart. Server only:
+ *        browser code reads the name through useBranding()
+ *        (src/components/global/branding), which the root layout seeds.
+ * WHERE: Root layout metadata, auth shell, emails, Better Auth 2FA issuer,
+ *        Resend sender name, WordPress app name.
+ */
+export function appName(): string {
+  return platformSettingText('appName') || 'Penrose Studio'
+}
 
-export const APP_DESCRIPTION =
-  process.env['NEXT_PUBLIC_APP_DESCRIPTION'] ?? `${APP_NAME} — turn any topic into a complete, structured course.`
+export function appDescription(): string {
+  return platformSettingText('appDescription') || `${appName()}: turn any topic into a complete, structured course.`
+}
 
 /* SOURCE OF TRUTH KEYWORDS: APP_LOGO, app icon, brand mark
  * The app icon (public/brand/logo.png, 512 px, transparent corners), used as
@@ -59,9 +76,7 @@ export const APP_DOMAIN = APP_METADATA_BASE.hostname
  * WHERE: Consumed by upgrade modal copy and layout metadata.
  */
 export const BRANDING = {
-  appName: APP_NAME,
   appLogo: APP_LOGO,
-  appDescription: APP_DESCRIPTION,
   appUrl: APP_URL,
   appDomain: APP_DOMAIN,
   metadataBase: APP_METADATA_BASE,

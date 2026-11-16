@@ -48,24 +48,23 @@ const notFound = (): Response =>
     headers: { 'Content-Type': 'application/json' },
   })
 
-/* Memoised per runtime instance so the dynamic import cost is paid once, not
- * on every auth request. */
-let handlersPromise: Promise<{
-  GET: (request: Request) => Promise<Response>
-  POST: (request: Request) => Promise<Response>
-}> | null = null
+/* The modules are imported once; the handlers are rebuilt only when getAuth()
+ * returns a new instance (a sign in setting changed in the portal). */
+let modulesPromise: Promise<
+  [typeof import('@/lib/better-auth/auth'), typeof import('better-auth/next-js')]
+> | null = null
+const handlersByInstance = new WeakMap<object, ReturnType<typeof import('better-auth/next-js').toNextJsHandler>>()
 
 async function loadBetterAuthHandlers() {
-  if (!handlersPromise) {
-    handlersPromise = (async () => {
-      const [{ auth }, { toNextJsHandler }] = await Promise.all([
-        import('@/lib/better-auth/auth'),
-        import('better-auth/next-js'),
-      ])
-      return toNextJsHandler(auth)
-    })()
+  modulesPromise ??= Promise.all([import('@/lib/better-auth/auth'), import('better-auth/next-js')])
+  const [{ getAuth }, { toNextJsHandler }] = await modulesPromise
+  const instance = getAuth()
+  let handlers = handlersByInstance.get(instance)
+  if (!handlers) {
+    handlers = toNextJsHandler(instance)
+    handlersByInstance.set(instance, handlers)
   }
-  return handlersPromise
+  return handlers
 }
 
 export async function GET(request: Request): Promise<Response> {
