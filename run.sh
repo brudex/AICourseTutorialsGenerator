@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-PROJECT_FOLDER=/var/www/curriq.quizfactor
+PROJECT_FOLDER=/var/www/curiq.quizfactor
 if [ -z "${BASH_VERSION:-}" ]; then
-  exec bash /var/www/curriq.quizfactor/run.sh
+  exec bash /var/www/curiq.quizfactor/run.sh
 fi
 set -eo pipefail
 echo "Starting AI Course Studio..."
