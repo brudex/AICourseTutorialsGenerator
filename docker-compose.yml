@@ -1,21 +1,24 @@
-# Self hosting on one server (a VPS): database, a one-off migration, the web
-# app and the worker. Put secrets in .env.production (never committed).
+# Self hosting on one server (a VPS): a one-off migration, the web app and
+# the worker. PostgreSQL runs on the host; containers reach it at
+# host.docker.internal. Put secrets in .env.production (never committed).
 # With STORAGE_DRIVER=local, web and worker share the "storage" volume; for
 # more than one server use STORAGE_DRIVER=s3. See docs/14-deployment.md.
-services:
-  db:
-    image: postgres:16
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: studio
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
-      POSTGRES_DB: studio
-    volumes: [db:/var/lib/postgresql/data]
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U studio"]
-      interval: 5s
-      retries: 10
+#
+# DATABASE_URL is built from the POSTGRES_* values so it targets the host.
+# Set DATABASE_URL yourself when the password needs URL-encoding.
 
+x-host-db: &host-db
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  environment:
+    POSTGRES_HOST: ${POSTGRES_HOST:-host.docker.internal}
+    POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+    POSTGRES_USER: ${POSTGRES_USER:-studio}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    POSTGRES_DB: ${POSTGRES_DB:-studio}
+    DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD}@${POSTGRES_HOST:-host.docker.internal}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-studio}?schema=public}
+
+services:
   migrate:
     image: ai-course-studio
     build: &build
@@ -28,14 +31,16 @@ services:
         NEXT_PUBLIC_SUBSCRIPTIONS_ENABLED: ${NEXT_PUBLIC_SUBSCRIPTIONS_ENABLED:-false}
         NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
     env_file: .env.production
+    <<: *host-db
     command: ["npx", "prisma", "migrate", "deploy"]
-    depends_on: { db: { condition: service_healthy } }
 
   web:
     image: ai-course-studio
     build: *build
     restart: unless-stopped
+    init: true
     env_file: .env.production
+    <<: *host-db
     ports: ["3000:3000"]
     volumes: [storage:/app/.storage]
     depends_on: { migrate: { condition: service_completed_successfully } }
@@ -44,12 +49,13 @@ services:
     image: ai-course-studio
     build: *build
     restart: unless-stopped
+    init: true
     env_file: .env.production
+    <<: *host-db
     command: ["npm", "run", "worker"]
     volumes: [storage:/app/.storage]
     stop_grace_period: 2m
     depends_on: { migrate: { condition: service_completed_successfully } }
 
 volumes:
-  db:
   storage:

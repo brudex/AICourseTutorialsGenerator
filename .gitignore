@@ -61,3 +61,5 @@ next-env.d.ts
 
 # Downloaded OAuth client secrets (Google Cloud "Download JSON"); keys belong in .env only
 client_secret*.json
+.env
+.env.production
