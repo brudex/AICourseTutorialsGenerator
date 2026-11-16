@@ -41,7 +41,7 @@ services:
     init: true
     env_file: .env.production
     <<: *host-db
-    ports: ["3000:3000"]
+    ports: ["3047:3000"]
     volumes: [storage:/app/.storage]
     depends_on: { migrate: { condition: service_completed_successfully } }
 

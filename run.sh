@@ -6,7 +6,6 @@ if [ -z "${BASH_VERSION:-}" ]; then
 fi
 set -eo pipefail
 echo "Starting AI Course Studio..."
-
 echo "Project folder: ${PROJECT_FOLDER}"
 cd ${PROJECT_FOLDER}
 echo "Building Docker image..."
