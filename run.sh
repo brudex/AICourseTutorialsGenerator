@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# post-receive sources this file from /bin/sh; re-enter Bash before Bash-only options.
+
+PROJECT_FOLDER=/var/www/curriq.quizfactor
 if [ -z "${BASH_VERSION:-}" ]; then
   exec bash /var/www/curriq.quizfactor/run.sh
 fi
 set -eo pipefail
 echo "Starting AI Course Studio..."
-PROJECT_FOLDER=/var/www/ai-course-studio
+
 echo "Project folder: ${PROJECT_FOLDER}"
 cd ${PROJECT_FOLDER}
 echo "Building Docker image..."
