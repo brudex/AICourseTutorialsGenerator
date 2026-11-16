@@ -68,6 +68,10 @@ export const metadata: Metadata = {
   description: BRANDING.appDescription,
 }
 
+/* The setup gate reads secrets that exist only at runtime. Prerendering this
+ * layout during `next build` freezes the "missing" checklist into the image. */
+export const dynamic = 'force-dynamic'
+
 export default function RootLayout({
   children,
 }: Readonly<{
