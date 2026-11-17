@@ -1098,14 +1098,15 @@ model Asset {
 }
 
 /// VoiceProfile — how narration sounds (blueprint §14): the provider voice
-/// id, speaking speed, and style instructions. The TTS *model* is chosen by
-/// the TTS capability route; the profile only picks the voice on it. One
-/// default profile per workspace for now (per-course voices later).
-/// aiModelId is the model the voice was picked for: voice ids only work on
-/// their own model, so any other model (a new route, the fallback) narrates
-/// with its own default voice instead (resolveVoiceForModel).
+/// id, speaking speed, and style instructions for ONE TTS model. The TTS
+/// *model* is chosen by the TTS capability route; each model keeps its own
+/// voice because voice ids only work on their own model. A model with no
+/// profile narrates with its catalog default (resolveVoiceForModel). A null
+/// aiModelId is a profile saved before voices were per model; it still
+/// applies to models without their own profile.
 ///
-/// SOURCE OF TRUTH KEYWORDS: VoiceProfile, narration voice, TTS voice, aiModelId
+/// SOURCE OF TRUTH KEYWORDS: VoiceProfile, narration voice, TTS voice,
+///   aiModelId, voice per model
 model VoiceProfile {
   id             String   @id @default(cuid())
   organizationId String
@@ -1121,7 +1122,7 @@ model VoiceProfile {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   aiModel      AiModel?     @relation(fields: [aiModelId], references: [id], onDelete: SetNull)
 
-  @@index([organizationId])
+  @@unique([organizationId, aiModelId])
   @@index([aiModelId])
   @@map("voice_profile")
 }

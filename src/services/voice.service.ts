@@ -1,36 +1,35 @@
 import 'server-only'
 
 /**
- * SOURCE OF TRUTH KEYWORDS: voiceService, findDefaultVoice,
- *   upsertDefaultVoice, VoiceProfile, aiModelId
+ * SOURCE OF TRUTH KEYWORDS: voiceService, listVoiceProfiles,
+ *   upsertVoiceProfile, VoiceProfile, aiModelId, voice per model
  *
- * WHAT:  Pure Prisma for the workspace's default narration voice.
- * WHY:   One default profile per workspace today; the narrator reads it, the
- *        AI Providers page edits it. Kept separate from provider/model rows
- *        because a voice is a property of the course's sound, not of the
- *        connection.
+ * WHAT:  Pure Prisma for the workspace's narration voices, one per TTS model.
+ * WHY:   Voice ids only work on their own model, so each model keeps its own
+ *        voice, speed and style; the narrator reads them all and the gateway
+ *        picks the one for whichever model speaks. Kept separate from
+ *        provider/model rows because a voice is a property of the course's
+ *        sound, not of the connection.
  * WHERE: aiProviders router (voice section); narrator agent.
  */
 
 import type { DbClient } from '@/lib/config'
 
-export function findDefaultVoice(db: DbClient, organizationId: string) {
-  return db.voiceProfile.findFirst({
-    where: { organizationId, isDefault: true },
-    select: { id: true, name: true, aiModelId: true, voice: true, speed: true, instructions: true },
-  })
+const VOICE_PROFILE_SELECT = { id: true, aiModelId: true, voice: true, speed: true, instructions: true } as const
+
+export function listVoiceProfiles(db: DbClient, organizationId: string) {
+  return db.voiceProfile.findMany({ where: { organizationId }, orderBy: { createdAt: 'asc' }, select: VOICE_PROFILE_SELECT })
 }
 
-export async function upsertDefaultVoice(
+export function upsertVoiceProfile(
   db: DbClient,
   organizationId: string,
-  data: { aiModelId: string | null; voice: string; speed: number; instructions: string }
+  data: { aiModelId: string; voice: string; speed: number; instructions: string }
 ) {
-  const existing = await findDefaultVoice(db, organizationId)
-  return existing
-    ? db.voiceProfile.update({ where: { id: existing.id }, data, select: { id: true, voice: true } })
-    : db.voiceProfile.create({
-        data: { organizationId, name: 'Default narrator', isDefault: true, ...data },
-        select: { id: true, voice: true },
-      })
+  return db.voiceProfile.upsert({
+    where: { organizationId_aiModelId: { organizationId, aiModelId: data.aiModelId } },
+    update: { voice: data.voice, speed: data.speed, instructions: data.instructions },
+    create: { organizationId, name: 'Narrator', isDefault: true, ...data },
+    select: VOICE_PROFILE_SELECT,
+  })
 }

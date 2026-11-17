@@ -99,6 +99,11 @@ export function findModel(db: DbClient, organizationId: string, id: string) {
   return db.aiModel.findFirst({ where: { id, organizationId }, select: AI_MODEL_SELECT })
 }
 
+/** Gateway read: one model with its provider's credentials (voice listing, voice preview). */
+export function findModelWithCredentials(db: DbClient, organizationId: string, id: string) {
+  return db.aiModel.findFirst({ where: { id, organizationId }, select: MODEL_WITH_CREDENTIALS_SELECT })
+}
+
 export function createModel(db: DbClient, data: Prisma.AiModelUncheckedCreateInput) {
   return db.aiModel.create({ data, select: AI_MODEL_SELECT })
 }

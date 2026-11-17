@@ -260,16 +260,17 @@ export type ProviderConnectionResult =
  * SOURCE OF TRUTH KEYWORDS: saveVoiceProfileSchema, SaveVoiceProfileValues,
  *   VOICE_SPEED_LIMITS, narration voice settings
  *
- * WHAT:  The workspace narration voice: provider voice id, speed, and style
- *        instructions (honoured by instruction-capable TTS models).
+ * WHAT:  One TTS model's narration voice: provider voice id, speed, and
+ *        style instructions (honoured by instruction-capable TTS models).
+ *        Each model keeps its own, since voice ids only work on their model.
  * WHERE: aiProviders.saveVoice / previewVoice; Narration voice form.
  */
 export const VOICE_SPEED_LIMITS = { min: 0.75, max: 1.5 } as const
 
 export const saveVoiceProfileSchema = z.object({
   organizationId: z.string().min(1),
-  /* The AiModel the voice was picked for (the Narration route's primary). */
-  aiModelId: z.string().min(1).nullable(),
+  /* The AiModel this voice belongs to. */
+  aiModelId: z.string().min(1, 'Choose a voice model.'),
   voice: z.string().trim().min(1, 'Choose a voice.').max(120),
   speed: z.number().min(VOICE_SPEED_LIMITS.min).max(VOICE_SPEED_LIMITS.max),
   instructions: z.string().trim().max(500),
@@ -279,17 +280,19 @@ export type SaveVoiceProfileValues = z.infer<typeof saveVoiceProfileSchema>
 
 /**
  * SOURCE OF TRUTH KEYWORDS: VoiceOption, VoiceControls, VoiceCatalogSource,
- *   NarrationVoiceModel, NarrationVoiceOptions, SavedNarrationVoice, LiveVoiceList,
+ *   NarrationVoiceModel, SavedNarrationVoice, LiveVoiceList, NarrationModelChoice,
+ *   listModelVoicesSchema, SpeechDelivery,
  *   live voice list, voice picker, speed range, style instructions
  *
  * WHAT:  One pickable voice, the controls a TTS model honours (speed range,
- *        style instructions), and the voice choices for each model routed to
- *        Narration (primary, then fallback).
+ *        style instructions), the voice choices of one TTS model, and the
+ *        models offered in the voice picker with their Narration role.
  * WHY:   Voices come from the provider when it can list them (ElevenLabs,
  *        local servers, SiliconFlow custom voices) and from the built-in
  *        catalog otherwise; the form, router and gateway share these shapes.
- * WHERE: VOICE_CATALOG (lib/config/ai-providers.ts), src/lib/ai/voices.ts,
- *        aiProviders.listVoices, NarrationVoiceForm.
+ * WHERE: VOICE_CATALOG and resolveVoiceForModel (lib/config/ai-providers.ts),
+ *        listModelVoices and synthesizeSpeech (gateway), aiProviders.listVoices,
+ *        NarrationVoiceForm, narrator agent.
  */
 export interface VoiceOption {
   id: string
@@ -314,7 +317,31 @@ export interface LiveVoiceList {
 export const VOICE_CATALOG_SOURCES = ['live', 'catalog'] as const
 export type VoiceCatalogSource = (typeof VOICE_CATALOG_SOURCES)[number]
 
-export type SavedNarrationVoice = Pick<SaveVoiceProfileValues, 'aiModelId' | 'voice'>
+/** A stored profile; aiModelId is null only for voices saved before per model voices. */
+export type SavedNarrationVoice = Omit<SaveVoiceProfileValues, 'organizationId' | 'aiModelId'> & { aiModelId: string | null }
+
+/** Per call adjustments on top of a profile (the course's learner level). */
+export interface SpeechDelivery {
+  speedFactor: number
+  style: string
+}
+
+export const NARRATION_ROUTE_ROLES = ['primary', 'fallback'] as const
+export type NarrationRouteRole = (typeof NARRATION_ROUTE_ROLES)[number]
+
+export interface NarrationModelChoice {
+  id: string
+  displayName: string
+  providerName: string
+  /** Its place in the Narration route; null when not routed. */
+  role: NarrationRouteRole | null
+}
+
+export const listModelVoicesSchema = z.object({
+  organizationId: z.string().min(1),
+  aiModelId: z.string().min(1),
+})
+export type ListModelVoicesValues = z.infer<typeof listModelVoicesSchema>
 
 export interface NarrationVoiceModel {
   aiModelId: string
@@ -328,11 +355,6 @@ export interface NarrationVoiceModel {
   source: VoiceCatalogSource
   /** Why the live list could not be read; null when it was (or none exists). */
   notice: string | null
-}
-
-export interface NarrationVoiceOptions {
-  primary: NarrationVoiceModel | null
-  fallback: NarrationVoiceModel | null
 }
 
 /**

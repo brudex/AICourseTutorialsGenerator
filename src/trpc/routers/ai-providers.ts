@@ -25,12 +25,13 @@ import { TRPCError } from '@trpc/server'
 
 import { createTRPCRouter } from '../init'
 import { protectedProcedure } from '../procedures'
-import { Prisma } from '@/generated/prisma'
+import { AiCapability, Prisma } from '@/generated/prisma'
 import { permissions } from '@/lib/permissions'
 import {
   aiCapabilitySchema,
   applyRoutingPresetSchema,
   createAiProviderSchema,
+  listModelVoicesSchema,
   saveVoiceProfileSchema,
   verifyAiProviderSchema,
   setCapabilityRouteSchema,
@@ -43,12 +44,12 @@ import {
   buildPresetRoutes,
   decryptApiKey,
   encryptApiKey,
-  listNarrationVoices,
+  listModelVoices,
   synthesizeSpeech,
   testProviderConnection,
   verifyProviderCredentials,
 } from '@/lib/ai'
-import { AI_CAPABILITY_LABELS, AI_PROVIDER_PRESETS, DEFAULT_VOICE } from '@/lib/config'
+import { AI_CAPABILITY_LABELS, AI_PROVIDER_PRESETS } from '@/lib/config'
 import * as voiceService from '@/services/voice.service'
 import * as aiProviderService from '@/services/ai-provider.service'
 
@@ -260,17 +261,19 @@ export const aiProvidersRouter = createTRPCRouter({
       return { capability: input.capability }
     }),
 
-  getVoice: protectedProcedure({ requirePermission: permissions.AI_PROVIDERS_READ })
+  /* Every saved voice, one per TTS model. */
+  listVoiceProfiles: protectedProcedure({ requirePermission: permissions.AI_PROVIDERS_READ })
     .input(orgInput)
-    .query(async ({ ctx, input }) => {
-      const voice = await voiceService.findDefaultVoice(ctx.db, input.organizationId)
-      return voice ?? { id: null, name: 'Default narrator', aiModelId: null, ...DEFAULT_VOICE }
-    }),
+    .query(({ ctx, input }) => voiceService.listVoiceProfiles(ctx.db, input.organizationId)),
 
-  /* Query: lists voices live from the provider, outside any transaction. */
+  /* Query: lists one model's voices live from its provider, outside any transaction. */
   listVoices: protectedProcedure({ requirePermission: permissions.AI_PROVIDERS_READ })
-    .input(orgInput)
-    .query(({ input }) => listNarrationVoices(input.organizationId)),
+    .input(listModelVoicesSchema)
+    .query(async ({ input }) => {
+      const voices = await listModelVoices(input.organizationId, input.aiModelId)
+      if (!voices) throw new TRPCError({ code: 'NOT_FOUND', message: 'Model not found in this workspace.' })
+      return voices
+    }),
 
   saveVoice: protectedProcedure({
     requirePermission: permissions.AI_PROVIDERS_UPDATE,
@@ -278,11 +281,13 @@ export const aiProvidersRouter = createTRPCRouter({
   })
     .input(saveVoiceProfileSchema)
     .mutation(async ({ ctx, input }) => {
-      /* The model the voice belongs to must be in THIS workspace. */
-      if (input.aiModelId && !(await aiProviderService.findModel(ctx.db, input.organizationId, input.aiModelId))) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Model not found in this workspace.' })
+      /* The voice's model must be a voice model in THIS workspace. */
+      const model = await aiProviderService.findModel(ctx.db, input.organizationId, input.aiModelId)
+      if (!model) throw new TRPCError({ code: 'NOT_FOUND', message: 'Model not found in this workspace.' })
+      if (!model.capabilities.includes(AiCapability.TTS)) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'That model is not set up for Narration.' })
       }
-      return voiceService.upsertDefaultVoice(ctx.db, input.organizationId, {
+      return voiceService.upsertVoiceProfile(ctx.db, input.organizationId, {
         aiModelId: input.aiModelId,
         voice: input.voice,
         speed: input.speed,
@@ -291,7 +296,8 @@ export const aiProvidersRouter = createTRPCRouter({
     }),
 
   /* Query, not mutation: a provider call must not hold a DB transaction.
-   * Returns a short sample as a data URL the browser can play directly. */
+   * Plays the unsaved form values on the chosen model and returns a short
+   * sample as a data URL the browser can play directly. */
   previewVoice: protectedProcedure({ requirePermission: permissions.AI_PROVIDERS_UPDATE })
     .input(saveVoiceProfileSchema)
     .query(async ({ input }) => {
@@ -306,9 +312,8 @@ export const aiProvidersRouter = createTRPCRouter({
             taskId: null,
           },
           text: 'Welcome to the course. In this lesson, we will build something practical together, one step at a time.',
-          voice: { aiModelId: input.aiModelId, voice: input.voice },
-          speed: input.speed,
-          instructions: input.instructions,
+          profiles: [{ aiModelId: input.aiModelId, voice: input.voice, speed: input.speed, instructions: input.instructions }],
+          aiModelId: input.aiModelId,
         })
         return {
           dataUrl: `data:${speech.mimeType};base64,${Buffer.from(speech.audio).toString('base64')}`,

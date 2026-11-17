@@ -12,7 +12,7 @@ export {
   generateImage,
   generateStructured,
   generateText,
-  listNarrationVoices,
+  listModelVoices,
   readImageText,
   synthesizeSpeech,
   testProviderConnection,

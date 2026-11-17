@@ -38,11 +38,11 @@ import type {
   AiSpeechResult,
   AiUsage,
   ChatMessage,
-  NarrationVoiceModel,
-  NarrationVoiceOptions,
-  ProviderConnectionResult,
   LiveVoiceList,
+  NarrationVoiceModel,
+  ProviderConnectionResult,
   SavedNarrationVoice,
+  SpeechDelivery,
 } from '@/lib/types'
 import { SPARE_MODEL_AI_ERROR_KINDS } from '@/lib/types'
 import * as aiProviderService from '@/services/ai-provider.service'
@@ -408,29 +408,36 @@ export async function testProviderConnection(
  *   voice per model, ElevenLabs speech, DashScope speech
  *
  * WHAT:  Voices `text` with the workspace's routed TTS model (primary, then
- *        fallback) and returns the audio with its measured duration and the
+ *        fallback), or with one named model when `aiModelId` is set (voice
+ *        preview), and returns the audio with its measured duration and the
  *        voice id that spoke it.
  * WHY:   Same accounting as text calls: one AiUsageEvent per provider call.
  *        TTS is billed per character, so characters are recorded in the
  *        ledger's input-units column and priced with the model's
- *        inputPricePerMTok (USD per 1M characters). Each model gets a voice
- *        it accepts (resolveVoiceForModel) and only the controls it honours
- *        (voiceCatalogFor): speed clamped to its range, style only if used.
+ *        inputPricePerMTok (USD per 1M characters). Each model speaks with its
+ *        own saved voice (resolveVoiceForModel), adjusted by `delivery`, and
+ *        gets only the controls it honours (voiceCatalogFor): speed clamped to
+ *        its range, style only if used.
  */
 export async function synthesizeSpeech(request: {
   context: AiCallContext
   text: string
-  /** The workspace's saved voice; null = each model's default voice. */
-  voice: SavedNarrationVoice | null
-  speed: number
-  instructions: string
+  /** Every saved voice in the workspace; each model uses its own. */
+  profiles: readonly SavedNarrationVoice[]
+  delivery?: SpeechDelivery
+  /** Speak with this model only, no routing or fallback. */
+  aiModelId?: string
 }): Promise<AiSpeechResult> {
   const base: BaseRequest = { context: request.context, capability: Capability.TTS, messages: [] }
-  return withFallback(base, async (model) => {
+  const delivery = request.delivery ?? { speedFactor: 1, style: '' }
+  const speak = async (model: ModelWithCredentials): Promise<AiSpeechResult> => {
     const startedAt = Date.now()
-    const voice = resolveVoiceForModel({ id: model.id, modelId: model.modelId, kind: model.provider.kind }, request.voice)
+    const profile = resolveVoiceForModel({ id: model.id, modelId: model.modelId, kind: model.provider.kind }, request.profiles)
+    const voice = profile.voice
     const { controls } = voiceCatalogFor(model.provider.kind, model.modelId)
-    const speed = controls.speed ? Math.min(controls.speed.max, Math.max(controls.speed.min, request.speed)) : 1
+    const paced = Number((profile.speed * delivery.speedFactor).toFixed(2))
+    const speed = controls.speed ? Math.min(controls.speed.max, Math.max(controls.speed.min, paced)) : 1
+    const instructions = controls.style ? [profile.instructions, delivery.style].filter(Boolean).join(' ') : ''
     try {
       /* Alibaba and ElevenLabs use their own speech APIs; everyone else /audio/speech. */
       const audio =
@@ -443,7 +450,7 @@ export async function synthesizeSpeech(request: {
                 voice,
                 input: request.text,
                 speed,
-                instructions: controls.style ? request.instructions : '',
+                instructions,
               })
       const probed = await probeAudio(audio)
       const characters = request.text.length
@@ -465,7 +472,13 @@ export async function synthesizeSpeech(request: {
       await recordUsage(model, base, { ...emptyUsage(), latencyMs: Date.now() - startedAt }, { success: false, error: gatewayError })
       throw gatewayError
     }
-  })
+  }
+  if (!request.aiModelId) return withFallback(base, speak)
+  const model = await aiProviderService.findModelWithCredentials(prisma, request.context.organizationId, request.aiModelId)
+  if (!model?.isEnabled || !model.provider.isEnabled || !model.capabilities.includes(Capability.TTS)) {
+    throw new AiGatewayError('not_configured', 'That voice model is not enabled for Narration.')
+  }
+  return speak(model)
 }
 
 /* Widescreen sizes each provider accepts: Qwen-Image's documented 16:9
@@ -602,25 +615,18 @@ async function narrationVoiceModel(model: ModelWithCredentials): Promise<Narrati
 }
 
 /**
- * SOURCE OF TRUTH KEYWORDS: listNarrationVoices, narration voice options,
- *   voices from provider, ElevenLabs voices, routed TTS model voices
+ * SOURCE OF TRUTH KEYWORDS: listModelVoices, voices for a model, voices from
+ *   provider, ElevenLabs voices, TTS model voice picker
  *
- * WHAT:  The voices each model routed to Narration offers (the narrator's
- *        override, else primary then fallback), read live from the provider
- *        when it can list them and from the catalog otherwise, with the
- *        controls each model honours.
- * WHY:   The voice picker must show what the connected provider really has
- *        (cloned ElevenLabs voices included). A provider that cannot be
- *        reached still returns its catalog, with a notice saying why.
+ * WHAT:  The voices one TTS model offers, read live from its provider when it
+ *        can list them and from the catalog otherwise, with the controls the
+ *        model honours. null when the model is not in this workspace.
+ * WHY:   The voice picker loads voices for whichever model is chosen, so it
+ *        shows what that provider really has (cloned ElevenLabs voices too).
+ *        An unreachable provider still returns its catalog with a notice.
  * WHERE: aiProviders.listVoices.
  */
-export async function listNarrationVoices(organizationId: string): Promise<NarrationVoiceOptions> {
-  let routed: ModelWithCredentials[]
-  try {
-    routed = await resolveModelsForCall(prisma, { organizationId, capability: Capability.TTS, agentId: 'narrator' })
-  } catch {
-    return { primary: null, fallback: null }
-  }
-  const [primary, fallback] = await Promise.all(routed.slice(0, 2).map(narrationVoiceModel))
-  return { primary: primary ?? null, fallback: fallback ?? null }
+export async function listModelVoices(organizationId: string, aiModelId: string): Promise<NarrationVoiceModel | null> {
+  const model = await aiProviderService.findModelWithCredentials(prisma, organizationId, aiModelId)
+  return model ? narrationVoiceModel(model) : null
 }

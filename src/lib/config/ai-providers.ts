@@ -270,21 +270,22 @@ export function voiceCatalogFor(
 
 /**
  * SOURCE OF TRUTH KEYWORDS: resolveVoiceForModel, fallback voice, voice per
- *   model, SavedNarrationVoice, aiModelId
+ *   model, SavedNarrationVoice, aiModelId, VoiceProfile lookup
  *
- * WHAT:  The voice id one TTS model should speak with: the saved voice when
- *        it was picked for this model (or saved before models were recorded),
- *        otherwise the model's own default voice.
+ * WHAT:  The voice, speed and style one TTS model speaks with: its own saved
+ *        profile, else a profile saved before voices were per model, else the
+ *        model's catalog default voice with the default speed and style.
  * WHY:   Voice ids only work on their own model. Rerouting Narration or
  *        falling back to another provider must not send it a foreign id.
- * WHERE: synthesizeSpeech (gateway), aiProviders.listVoices.
+ * WHERE: synthesizeSpeech (gateway), NarrationVoiceForm (form defaults).
  */
 export function resolveVoiceForModel(
   model: { id: string; modelId: string; kind: ProviderKind },
-  saved: SavedNarrationVoice | null
-): string {
-  if (saved && (saved.aiModelId === null || saved.aiModelId === model.id)) return saved.voice
-  return voiceCatalogFor(model.kind, model.modelId).defaultVoice
+  profiles: readonly SavedNarrationVoice[]
+): Omit<SavedNarrationVoice, 'aiModelId'> {
+  const own = profiles.find((p) => p.aiModelId === model.id) ?? profiles.find((p) => p.aiModelId === null)
+  if (own) return { voice: own.voice, speed: own.speed, instructions: own.instructions }
+  return { voice: voiceCatalogFor(model.kind, model.modelId).defaultVoice, speed: DEFAULT_VOICE.speed, instructions: DEFAULT_VOICE.instructions }
 }
 
 export const DEFAULT_VOICE = { voice: 'alloy', speed: 1, instructions: 'Warm, clear and friendly online instructor.' } as const

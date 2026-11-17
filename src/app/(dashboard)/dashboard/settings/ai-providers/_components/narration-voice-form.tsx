@@ -1,19 +1,19 @@
 'use client'
 
 /**
- * SOURCE OF TRUTH KEYWORDS: NarrationVoiceForm, narration voice settings,
- *   preview voice, VoiceProfile form, aiProviders.listVoices, live voices,
- *   voice controls, fallback voice
+ * SOURCE OF TRUTH KEYWORDS: NarrationVoiceForm, ModelVoicePanel,
+ *   VoiceProfileForm, narration voice settings, voice model picker, preview
+ *   voice, VoiceProfile form, aiProviders.listVoices, voice per model
  *
- * WHAT:  Picks the workspace narration voice (voice id, speed, speaking
- *        style) for the model routed to Narration and plays a sample.
- * WHY:   Voice is chosen by ear, so Preview plays real audio before saving.
- *        The voices come from the provider itself when it can list them
- *        (ElevenLabs, local servers) and from the built-in catalog
- *        otherwise (aiProviders.listVoices). Only the controls the model
- *        honours are shown. The voice is saved with the model it belongs to,
- *        so a rerouted or fallback model speaks with its own default voice
- *        instead of failing on a foreign id.
+ * WHAT:  Picks a voice model, loads that model's voices (live from its
+ *        provider when it can list them, built in otherwise) and saves a
+ *        voice, speed and speaking style for it. A model that is not the
+ *        Narration model can be made the Narration model from here.
+ * WHY:   Voice ids only work on their own model, so every voice model keeps
+ *        its own voice: rerouting Narration or falling back never sends a
+ *        model a voice it does not have. Voice is chosen by ear, so Preview
+ *        plays the unsaved choice on the chosen model before saving. Only
+ *        the controls the model honours are shown.
  * WHERE: Narration voice section of AiProvidersSettings.
  */
 
@@ -22,33 +22,155 @@ import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Loader2Icon, PlayIcon } from 'lucide-react'
 
+import { AiCapability } from '@/generated/prisma'
 import { trpc } from '@/trpc/react-provider'
 import { resolveVoiceForModel } from '@/lib/config'
-import { saveVoiceProfileSchema, type SaveVoiceProfileValues } from '@/lib/types'
+import {
+  saveVoiceProfileSchema,
+  type NarrationModelChoice,
+  type NarrationRouteRole,
+  type NarrationVoiceModel,
+  type SavedNarrationVoice,
+  type SaveVoiceProfileValues,
+} from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 
 const SPEEDS = [0.75, 0.9, 1, 1.1, 1.2, 1.25, 1.5] as const
 
-export function NarrationVoiceForm({
+const ROLE_LABELS: Record<NarrationRouteRole, string> = { primary: 'Narration', fallback: 'Fallback' }
+
+interface NarrationVoiceFormProps {
+  organizationId: string
+  /* Enabled models tagged for Narration, with their place in the route. */
+  models: readonly NarrationModelChoice[]
+  fallbackModelId: string | null
+  profiles: readonly SavedNarrationVoice[]
+  canEdit: boolean
+}
+
+export function NarrationVoiceForm({ organizationId, models, fallbackModelId, profiles, canEdit }: NarrationVoiceFormProps) {
+  const utils = trpc.useUtils()
+  const setRoute = trpc.aiProviders.setRoute.useMutation()
+  const [selectedId, setSelectedId] = React.useState<string | null>(null)
+  const [routeError, setRouteError] = React.useState<string | null>(null)
+  const primary = models.find((m) => m.role === 'primary') ?? null
+  /* The chosen model, else the Narration model, else the first voice model. */
+  const selected = models.find((m) => m.id === selectedId) ?? primary ?? models[0] ?? null
+
+  if (!selected) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        Add a model with the Narration capability to a provider above to pick its voice.
+      </p>
+    )
+  }
+
+  /* Makes the chosen model the Narration model; a promoted fallback swaps places with the old one. */
+  async function routeToNarration(model: NarrationModelChoice) {
+    setRouteError(null)
+    const nextFallback = model.role === 'fallback' ? (primary?.id ?? null) : fallbackModelId === model.id ? null : fallbackModelId
+    try {
+      await setRoute.mutateAsync({ organizationId, capability: AiCapability.TTS, modelId: model.id, fallbackModelId: nextFallback })
+      await utils.aiProviders.list.invalidate({ organizationId })
+    } catch (err) {
+      setRouteError(err instanceof Error ? err.message : 'Could not change the Narration model.')
+    }
+  }
+
+  return (
+    <div className="flex max-w-xl flex-col gap-5">
+      <div className="space-y-2">
+        <p className="text-sm font-medium">Voice model</p>
+        <Select value={selected.id} onValueChange={(value) => value && setSelectedId(value)}>
+          <SelectTrigger className="w-full" aria-label="Voice model">
+            <SelectValue>
+              {(value: string) => {
+                const model = models.find((m) => m.id === value)
+                return model ? `${model.displayName} · ${model.providerName}` : 'Choose a model'
+              }}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {models.map((m) => (
+              <SelectItem key={m.id} value={m.id}>
+                {m.displayName} · {m.providerName}
+                {m.role ? <span className="text-muted-foreground"> ({ROLE_LABELS[m.role]})</span> : null}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+          <span>
+            {selected.role === 'primary'
+              ? 'Narrates your courses.'
+              : selected.role === 'fallback'
+                ? 'Narrates when the Narration model fails.'
+                : 'Not used for Narration yet.'}
+          </span>
+          {canEdit && selected.role !== 'primary' ? (
+            <Button type="button" size="sm" variant="outline" disabled={setRoute.isPending} onClick={() => void routeToNarration(selected)}>
+              {setRoute.isPending ? <Loader2Icon className="size-4 animate-spin" /> : null}
+              Use for Narration
+            </Button>
+          ) : null}
+        </div>
+        {routeError ? <p className="text-sm text-destructive">{routeError}</p> : null}
+      </div>
+      <ModelVoicePanel key={selected.id} organizationId={organizationId} model={selected} profiles={profiles} canEdit={canEdit} />
+    </div>
+  )
+}
+
+/* Loads one model's voices, then mounts its form with that model's saved values. */
+function ModelVoicePanel({
   organizationId,
-  initial,
-  saved,
+  model,
+  profiles,
   canEdit,
 }: {
   organizationId: string
-  initial: Omit<SaveVoiceProfileValues, 'organizationId'>
-  /* False while the workspace still uses the built-in default voice. */
-  saved: boolean
+  model: NarrationModelChoice
+  profiles: readonly SavedNarrationVoice[]
+  canEdit: boolean
+}) {
+  const voices = trpc.aiProviders.listVoices.useQuery(
+    { organizationId, aiModelId: model.id },
+    { staleTime: 5 * 60_000, retry: false }
+  )
+  if (voices.isLoading) return <Skeleton className="h-40 w-full" />
+  if (!voices.data) return <p className="text-sm text-destructive">{voices.error?.message ?? 'Could not load voices.'}</p>
+
+  const options = voices.data
+  const resolved = resolveVoiceForModel({ id: options.aiModelId, modelId: options.modelId, kind: options.providerKind }, profiles)
+  /* A default the provider's own list does not have falls back to its first voice. */
+  const known = options.voices.length === 0 || options.voices.some((v) => v.id === resolved.voice)
+  const initial = { ...resolved, voice: known ? resolved.voice : options.defaultVoice }
+  const hasOwnVoice = profiles.some((p) => p.aiModelId === model.id)
+
+  return <VoiceProfileForm organizationId={organizationId} options={options} initial={initial} hasOwnVoice={hasOwnVoice} canEdit={canEdit} />
+}
+
+function VoiceProfileForm({
+  organizationId,
+  options,
+  initial,
+  hasOwnVoice,
+  canEdit,
+}: {
+  organizationId: string
+  options: NarrationVoiceModel
+  initial: Omit<SaveVoiceProfileValues, 'organizationId' | 'aiModelId'>
+  hasOwnVoice: boolean
   canEdit: boolean
 }) {
   const utils = trpc.useUtils()
   const save = trpc.aiProviders.saveVoice.useMutation()
-  const options = trpc.aiProviders.listVoices.useQuery({ organizationId }, { staleTime: 5 * 60_000, retry: false })
   const [message, setMessage] = React.useState<string | null>(null)
   const [error, setError] = React.useState<string | null>(null)
   const [previewing, setPreviewing] = React.useState(false)
@@ -56,31 +178,11 @@ export function NarrationVoiceForm({
 
   const form = useForm<SaveVoiceProfileValues>({
     resolver: zodResolver(saveVoiceProfileSchema),
-    defaultValues: { organizationId, ...initial },
+    defaultValues: { organizationId, aiModelId: options.aiModelId, ...initial },
   })
-  const [voice, aiModelId] = useWatch({ control: form.control, name: ['voice', 'aiModelId'] })
-  const primary = options.data?.primary ?? null
-  const fallback = options.data?.fallback ?? null
-
-  /* A voice belongs to one model: when Narration points at another model,
-   * keep the voice only if that model has it, else start from its default. */
-  React.useEffect(() => {
-    if (!primary || form.getValues('aiModelId') === primary.aiModelId) return
-    const stillValid = primary.voices.some((v) => v.id === form.getValues('voice'))
-    form.setValue('aiModelId', primary.aiModelId, { shouldDirty: true })
-    if (stillValid) return
-    form.setValue('voice', primary.defaultVoice, { shouldDirty: true })
-  }, [primary, form])
-  /* Shown until a voice is saved for the routed model. */
-  const savedForOtherModel =
-    saved && primary !== null && initial.aiModelId !== primary.aiModelId && !primary.voices.some((v) => v.id === initial.voice)
-
-  const speedRange = primary?.controls.speed ?? null
-  const unsupported = [!speedRange ? 'speed' : null, primary && !primary.controls.style ? 'speaking style' : null].filter(Boolean)
-  const fallbackVoiceId = fallback
-    ? resolveVoiceForModel({ id: fallback.aiModelId, modelId: fallback.modelId, kind: fallback.providerKind }, { aiModelId, voice })
-    : null
-  const fallbackVoiceLabel = fallback?.voices.find((v) => v.id === fallbackVoiceId)?.label ?? fallbackVoiceId
+  const voice = useWatch({ control: form.control, name: 'voice' })
+  const speedRange = options.controls.speed
+  const unsupported = [!speedRange ? 'speed' : null, !options.controls.style ? 'speaking style' : null].filter(Boolean)
 
   async function preview() {
     const valid = await form.trigger()
@@ -107,21 +209,16 @@ export function NarrationVoiceForm({
     setMessage(null)
     try {
       await save.mutateAsync(values)
-      await utils.aiProviders.getVoice.invalidate({ organizationId })
-      setMessage('Voice saved. Generate narration to apply it to existing courses.')
+      await utils.aiProviders.listVoiceProfiles.invalidate({ organizationId })
+      setMessage(`Voice saved for ${options.displayName}. Generate narration to apply it to existing courses.`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save the voice.')
     }
   }
 
-  if (options.isLoading) return <Skeleton className="h-40 w-full max-w-xl" />
-  if (!primary) {
-    return <p className="text-sm text-muted-foreground">Route a model to Narration above to pick its voice.</p>
-  }
-
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="flex max-w-xl flex-col gap-5" noValidate>
+      <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-5" noValidate>
         <FormField
           control={form.control}
           name="voice"
@@ -129,7 +226,7 @@ export function NarrationVoiceForm({
             <FormItem>
               <FormLabel>Voice</FormLabel>
               <div className="flex max-h-48 flex-wrap gap-1.5 overflow-y-auto">
-                {primary.voices.map(({ id, label, description }) => (
+                {options.voices.map(({ id, label, description }) => (
                   <button
                     key={id}
                     type="button"
@@ -149,12 +246,12 @@ export function NarrationVoiceForm({
                 <Input disabled={!canEdit} placeholder="Or type any voice id your provider supports" {...field} />
               </FormControl>
               <FormDescription>
-                {primary.source === 'live'
-                  ? `Voices loaded from ${primary.providerName} for ${primary.displayName}.`
-                  : `Built in voices for ${primary.displayName}.`}
+                {options.source === 'live'
+                  ? `Voices loaded from ${options.providerName}.`
+                  : `Built in voices for ${options.displayName}.`}
                 {unsupported.length > 0 ? ` This model does not use ${unsupported.join(' or ')}.` : ''}
               </FormDescription>
-              {primary.notice ? <p className="text-sm text-destructive">{primary.notice}</p> : null}
+              {options.notice ? <p className="text-sm text-destructive">{options.notice}</p> : null}
               <FormMessage />
             </FormItem>
           )}
@@ -187,7 +284,7 @@ export function NarrationVoiceForm({
             )}
           />
         ) : null}
-        {primary.controls.style ? (
+        {options.controls.style ? (
           <FormField
             control={form.control}
             name="instructions"
@@ -202,15 +299,8 @@ export function NarrationVoiceForm({
             )}
           />
         ) : null}
-        {fallback ? (
-          <p className="text-sm text-muted-foreground">
-            If {primary.displayName} fails, {fallback.displayName} narrates with {fallbackVoiceLabel}.
-          </p>
-        ) : null}
-        {savedForOtherModel ? (
-          <p className="text-sm text-muted-foreground">
-            Your saved voice belongs to another model. Pick a voice for {primary.displayName} and save.
-          </p>
+        {!hasOwnVoice ? (
+          <p className="text-sm text-muted-foreground">No voice saved for this model yet. Save one to keep it.</p>
         ) : null}
         {/* Sample playback target; captions are not meaningful for a voice sample. */}
         <audio ref={audioRef} className="hidden" />

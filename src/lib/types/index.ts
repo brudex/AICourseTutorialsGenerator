@@ -203,6 +203,8 @@ export {
   dashScopeImageResponseSchema,
   openAiImageResponseSchema,
   VOICE_CATALOG_SOURCES,
+  NARRATION_ROUTE_ROLES,
+  listModelVoicesSchema,
   elevenLabsVoicesResponseSchema,
   elevenLabsModelsResponseSchema,
   elevenLabsErrorSchema,
@@ -232,7 +234,10 @@ export type {
   LiveVoiceList,
   SavedNarrationVoice,
   NarrationVoiceModel,
-  NarrationVoiceOptions,
+  SpeechDelivery,
+  NarrationRouteRole,
+  NarrationModelChoice,
+  ListModelVoicesValues,
 } from './ai'
 export {
   TERMINAL_TASK_STATUSES,
