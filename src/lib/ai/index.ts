@@ -8,7 +8,16 @@ import 'server-only'
  * WHERE: aiProviders router; agents and the worker (planned).
  */
 
-export { generateImage, generateStructured, generateText, readImageText, synthesizeSpeech, testProviderConnection, verifyProviderCredentials } from './gateway'
+export {
+  generateImage,
+  generateStructured,
+  generateText,
+  listModelVoices,
+  readImageText,
+  synthesizeSpeech,
+  testProviderConnection,
+  verifyProviderCredentials,
+} from './gateway'
 export type { GenerateStructuredRequest } from './gateway'
 export { buildPresetRoutes, hasRouteFor, resolveModelsForCall } from './routing'
 export type { PresetRoute } from './routing'

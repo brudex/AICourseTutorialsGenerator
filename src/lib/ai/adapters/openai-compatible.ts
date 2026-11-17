@@ -18,7 +18,13 @@ import 'server-only'
 
 import OpenAI from 'openai'
 
-import { openAiImageResponseSchema, type ChatMessage } from '@/lib/types'
+import {
+  compatibleVoicesResponseSchema,
+  openAiImageResponseSchema,
+  siliconFlowVoiceListSchema,
+  type ChatMessage,
+  type LiveVoiceList,
+} from '@/lib/types'
 import { AiGatewayError, aiErrorFromStatus, toAiGatewayError } from '../errors'
 import { assertProviderUrlAllowed } from '../url-guard'
 
@@ -206,6 +212,57 @@ export async function createImage(
       return new Uint8Array(await image.arrayBuffer())
     }
     throw new AiGatewayError('invalid_output', 'The image provider returned no image.')
+  } catch (error) {
+    throw toAiGatewayError(error)
+  }
+}
+
+const VOICE_LIST_TIMEOUT_MS = 15_000
+
+async function getVoiceList(endpoint: ProviderEndpoint, path: string): Promise<unknown> {
+  const response = await fetch(`${endpoint.baseUrl.replace(/\/+$/, '')}${path}`, {
+    headers: endpoint.apiKey ? { authorization: `Bearer ${endpoint.apiKey}` } : {},
+    signal: AbortSignal.timeout(VOICE_LIST_TIMEOUT_MS),
+  })
+  /* Most servers have no voice list; that is an answer, not a failure. */
+  if (response.status === 404 || response.status === 405) return null
+  if (!response.ok) throw aiErrorFromStatus(response.status, await response.text().catch(() => `HTTP ${response.status}`))
+  return response.json().catch(() => null)
+}
+
+/**
+ * SOURCE OF TRUTH KEYWORDS: listSpeechVoices, GET /audio/voices, Kokoro
+ *   FastAPI voices, SiliconFlow custom voices, /audio/voice/list
+ *
+ * WHAT:  Voices an OpenAI-compatible server can list for `modelId`: the
+ *        GET /audio/voices list local servers expose (Kokoro FastAPI and
+ *        similar), else SiliconFlow's uploaded custom voices. Empty when the
+ *        server has neither. A full server list is `complete`; custom
+ *        voices alone add to the model's built-in voices.
+ * WHY:   The OpenAI protocol has no voice list, so these are the de facto
+ *        endpoints; a missing one (404) is normal and not an error.
+ * WHERE: src/lib/ai/voices.ts for LOCAL and CUSTOM providers.
+ */
+export async function listSpeechVoices(endpoint: ProviderEndpoint, modelId: string): Promise<LiveVoiceList> {
+  await assertProviderUrlAllowed(endpoint.baseUrl)
+  try {
+    const local = compatibleVoicesResponseSchema.safeParse(await getVoiceList(endpoint, '/audio/voices'))
+    if (local.success && local.data.voices.length > 0) {
+      const voices = local.data.voices.map((voice) =>
+        typeof voice === 'string'
+          ? { id: voice, label: voice, description: null }
+          : { id: voice.id, label: voice.name ?? voice.id, description: null }
+      )
+      return { voices, complete: true }
+    }
+    const custom = siliconFlowVoiceListSchema.safeParse(await getVoiceList(endpoint, '/audio/voice/list'))
+    if (custom.success) {
+      const voices = custom.data.result
+        .filter((voice) => !voice.model || voice.model === modelId)
+        .map((voice) => ({ id: voice.uri, label: voice.customName ?? voice.uri, description: 'custom' }))
+      return { voices, complete: false }
+    }
+    return { voices: [], complete: false }
   } catch (error) {
     throw toAiGatewayError(error)
   }

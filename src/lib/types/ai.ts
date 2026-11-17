@@ -260,20 +260,143 @@ export type ProviderConnectionResult =
  * SOURCE OF TRUTH KEYWORDS: saveVoiceProfileSchema, SaveVoiceProfileValues,
  *   VOICE_SPEED_LIMITS, narration voice settings
  *
- * WHAT:  The workspace narration voice: provider voice id, speed, and style
- *        instructions (honoured by instruction-capable TTS models).
+ * WHAT:  One TTS model's narration voice: provider voice id, speed, and
+ *        style instructions (honoured by instruction-capable TTS models).
+ *        Each model keeps its own, since voice ids only work on their model.
  * WHERE: aiProviders.saveVoice / previewVoice; Narration voice form.
  */
 export const VOICE_SPEED_LIMITS = { min: 0.75, max: 1.5 } as const
 
 export const saveVoiceProfileSchema = z.object({
   organizationId: z.string().min(1),
-  voice: z.string().trim().min(1, 'Choose a voice.').max(60),
+  /* The AiModel this voice belongs to. */
+  aiModelId: z.string().min(1, 'Choose a voice model.'),
+  voice: z.string().trim().min(1, 'Choose a voice.').max(120),
   speed: z.number().min(VOICE_SPEED_LIMITS.min).max(VOICE_SPEED_LIMITS.max),
   instructions: z.string().trim().max(500),
 })
 
 export type SaveVoiceProfileValues = z.infer<typeof saveVoiceProfileSchema>
+
+/**
+ * SOURCE OF TRUTH KEYWORDS: VoiceOption, VoiceControls, VoiceCatalogSource,
+ *   NarrationVoiceModel, SavedNarrationVoice, LiveVoiceList, NarrationModelChoice,
+ *   listModelVoicesSchema, SpeechDelivery,
+ *   live voice list, voice picker, speed range, style instructions
+ *
+ * WHAT:  One pickable voice, the controls a TTS model honours (speed range,
+ *        style instructions), the voice choices of one TTS model, and the
+ *        models offered in the voice picker with their Narration role.
+ * WHY:   Voices come from the provider when it can list them (ElevenLabs,
+ *        local servers, SiliconFlow custom voices) and from the built-in
+ *        catalog otherwise; the form, router and gateway share these shapes.
+ * WHERE: VOICE_CATALOG and resolveVoiceForModel (lib/config/ai-providers.ts),
+ *        listModelVoices and synthesizeSpeech (gateway), aiProviders.listVoices,
+ *        NarrationVoiceForm, narrator agent.
+ */
+export interface VoiceOption {
+  id: string
+  label: string
+  /** e.g. "british · female · cloned"; null when the provider gives none. */
+  description: string | null
+}
+
+export interface VoiceControls {
+  /** null = the model ignores speed. */
+  speed: { min: number; max: number } | null
+  /** true = speaking style instructions are sent to the model. */
+  style: boolean
+}
+
+/** A provider's own voice list: `complete` replaces the catalog, else it adds to it. */
+export interface LiveVoiceList {
+  voices: VoiceOption[]
+  complete: boolean
+}
+
+export const VOICE_CATALOG_SOURCES = ['live', 'catalog'] as const
+export type VoiceCatalogSource = (typeof VOICE_CATALOG_SOURCES)[number]
+
+/** A stored profile; aiModelId is null only for voices saved before per model voices. */
+export type SavedNarrationVoice = Omit<SaveVoiceProfileValues, 'organizationId' | 'aiModelId'> & { aiModelId: string | null }
+
+/** Per call adjustments on top of a profile (the course's learner level). */
+export interface SpeechDelivery {
+  speedFactor: number
+  style: string
+}
+
+export const NARRATION_ROUTE_ROLES = ['primary', 'fallback'] as const
+export type NarrationRouteRole = (typeof NARRATION_ROUTE_ROLES)[number]
+
+export interface NarrationModelChoice {
+  id: string
+  displayName: string
+  providerName: string
+  /** Its place in the Narration route; null when not routed. */
+  role: NarrationRouteRole | null
+}
+
+export const listModelVoicesSchema = z.object({
+  organizationId: z.string().min(1),
+  aiModelId: z.string().min(1),
+})
+export type ListModelVoicesValues = z.infer<typeof listModelVoicesSchema>
+
+export interface NarrationVoiceModel {
+  aiModelId: string
+  modelId: string
+  displayName: string
+  providerName: string
+  providerKind: ProviderKind
+  voices: VoiceOption[]
+  defaultVoice: string
+  controls: VoiceControls
+  source: VoiceCatalogSource
+  /** Why the live list could not be read; null when it was (or none exists). */
+  notice: string | null
+}
+
+/**
+ * SOURCE OF TRUTH KEYWORDS: elevenLabsVoicesResponseSchema,
+ *   elevenLabsModelsResponseSchema, elevenLabsErrorSchema,
+ *   compatibleVoicesResponseSchema, siliconFlowVoiceListSchema,
+ *   provider voice list replies
+ *
+ * WHAT:  The parts of provider voice and model list replies the adapters
+ *        read: ElevenLabs GET /voices and /models, the GET /audio/voices
+ *        list served by local OpenAI-compatible servers (Kokoro FastAPI), and
+ *        SiliconFlow's custom voice list.
+ * WHY:   Provider replies are untrusted input; a changed API becomes a clear
+ *        invalid_output error instead of a crash.
+ * WHERE: src/lib/ai/adapters/{elevenlabs,openai-compatible}.ts.
+ */
+export const elevenLabsVoicesResponseSchema = z.object({
+  voices: z.array(
+    z.object({
+      voice_id: z.string().min(1),
+      name: z.string().nullish(),
+      category: z.string().nullish(),
+      labels: z.record(z.string(), z.string().nullish()).nullish(),
+    })
+  ),
+})
+
+export const elevenLabsModelsResponseSchema = z.array(
+  z.object({ model_id: z.string().min(1), can_do_text_to_speech: z.boolean().nullish() })
+)
+
+export const elevenLabsErrorSchema = z.object({
+  detail: z.union([z.string(), z.object({ message: z.string().nullish(), status: z.string().nullish() })]),
+})
+
+export const compatibleVoicesResponseSchema = z.object({
+  voices: z.array(z.union([z.string().min(1), z.object({ id: z.string().min(1), name: z.string().nullish() })])),
+})
+
+export const siliconFlowVoiceListSchema = z.object({
+  result: z.array(z.object({ uri: z.string().min(1), customName: z.string().nullish(), model: z.string().nullish() })),
+})
 
 /**
  * SOURCE OF TRUTH KEYWORDS: AiSpeechResult, synthesized narration
@@ -302,6 +425,8 @@ export interface AiSpeechResult {
   extension: 'mp3' | 'wav' | 'ogg' | 'aac' | 'flac'
   durationMs: number
   usage: AiUsage
+  /** The voice id that spoke, after per-model resolution. */
+  voice: string
   model: AiGenerateResult<never>['model']
 }
 
@@ -310,12 +435,15 @@ export interface AiSpeechResult {
  *   credential check before save
  *
  * WHAT:  Checks a base URL + key with the provider BEFORE saving. A blank key
- *        with `providerId` re-uses the stored key (edit form).
+ *        with `providerId` re-uses the stored key (edit form). `kind` picks
+ *        how the provider lists its models.
  * WHERE: aiProviders.verifyCredentials; provider connect/edit dialogs.
  */
 export const verifyAiProviderSchema = z.object({
   organizationId: z.string().min(1),
   providerId: z.string().min(1).nullable(),
+  /* Picks the provider's own model list call (ElevenLabs is not OpenAI shaped). */
+  kind: providerKindSchema,
   baseUrl: baseUrlSchema,
   apiKey: z.string().trim().max(API_KEY_MAX),
 })

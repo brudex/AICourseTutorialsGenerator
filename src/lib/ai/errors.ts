@@ -43,9 +43,17 @@ const CONTENT_POLICY_PATTERN = /content[_\s-]?(policy|filter|management)|data_in
  *        AiGatewayError.
  * WHY:   Shared by the OpenAI SDK path and adapters that call providers with
  *        plain fetch (DashScope native TTS), so retry decisions match.
+ *        A 403 that is not about the key (e.g. Alibaba "AccessDenied.Unpurchased":
+ *        the account has not activated that model) keeps the provider's reason
+ *        and counts as a model problem, so spare models are tried.
  */
+const KEY_PROBLEM_PATTERN = /api[\s_-]?key|unauthori[sz]ed|authenticat|invalid[\s_-]?(token|key|credential)/i
+
 export function aiErrorFromStatus(status: number | null, message: string): AiGatewayError {
   const detail = message.slice(0, 300)
+  if (status === 403 && detail && !KEY_PROBLEM_PATTERN.test(detail)) {
+    return new AiGatewayError('bad_request', `The provider refused access to this model: ${detail}`, status)
+  }
   if (status === 401 || status === 403) {
     return new AiGatewayError('auth', 'The provider rejected the API key.', status)
   }

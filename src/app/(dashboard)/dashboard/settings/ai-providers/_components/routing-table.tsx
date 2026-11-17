@@ -57,7 +57,10 @@ export function RoutingTable({ organizationId, providers, routes, canEdit }: Rou
     setMessage(null)
     try {
       await action()
-      await utils.aiProviders.list.invalidate({ organizationId })
+      await Promise.all([
+        utils.aiProviders.list.invalidate({ organizationId }),
+        utils.aiProviders.listVoices.invalidate({ organizationId }),
+      ])
       setMessage(success)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not update routing.')

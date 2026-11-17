@@ -1,7 +1,8 @@
 /**
  * SOURCE OF TRUTH KEYWORDS: aiProvidersRouter, aiProviders.list,
  *   aiProviders.create, aiProviders.testConnection, aiProviders.upsertModel,
- *   aiProviders.setRoute, aiProviders.applyPreset, bring-your-own-key
+ *   aiProviders.setRoute, aiProviders.applyPreset, aiProviders.listVoices,
+ *   bring-your-own-key
  *
  * WHAT:  Workspace AI provider connections, their models, and the capability
  *        routing table (Settings → AI Providers).
@@ -24,12 +25,13 @@ import { TRPCError } from '@trpc/server'
 
 import { createTRPCRouter } from '../init'
 import { protectedProcedure } from '../procedures'
-import { Prisma } from '@/generated/prisma'
+import { AiCapability, Prisma } from '@/generated/prisma'
 import { permissions } from '@/lib/permissions'
 import {
   aiCapabilitySchema,
   applyRoutingPresetSchema,
   createAiProviderSchema,
+  listModelVoicesSchema,
   saveVoiceProfileSchema,
   verifyAiProviderSchema,
   setCapabilityRouteSchema,
@@ -42,11 +44,12 @@ import {
   buildPresetRoutes,
   decryptApiKey,
   encryptApiKey,
+  listModelVoices,
   synthesizeSpeech,
   testProviderConnection,
   verifyProviderCredentials,
 } from '@/lib/ai'
-import { DEFAULT_VOICE } from '@/lib/config'
+import { AI_CAPABILITY_LABELS, AI_PROVIDER_PRESETS } from '@/lib/config'
 import * as voiceService from '@/services/voice.service'
 import * as aiProviderService from '@/services/ai-provider.service'
 
@@ -168,7 +171,7 @@ export const aiProvidersRouter = createTRPCRouter({
         if (!stored) throw new TRPCError({ code: 'NOT_FOUND', message: 'Provider not found.' })
         apiKey = stored.apiKeyCiphertext ? decryptApiKey(stored.apiKeyCiphertext) : null
       }
-      return verifyProviderCredentials({ baseUrl: input.baseUrl, apiKey })
+      return verifyProviderCredentials(input.kind, { baseUrl: input.baseUrl, apiKey })
     }),
 
   upsertModel: protectedProcedure({
@@ -179,6 +182,12 @@ export const aiProvidersRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const provider = await aiProviderService.findProviderCredentials(ctx.db, input.organizationId, input.providerId)
       if (!provider) throw new TRPCError({ code: 'NOT_FOUND', message: 'Provider not found.' })
+      /* Voice only providers (ElevenLabs) cannot serve text or image capabilities. */
+      const allowed = AI_PROVIDER_PRESETS[provider.kind].allowedCapabilities
+      if (allowed && input.capabilities.some((c) => !allowed.includes(c))) {
+        const labels = allowed.map((c) => AI_CAPABILITY_LABELS[c].label).join(', ')
+        throw new TRPCError({ code: 'BAD_REQUEST', message: `${AI_PROVIDER_PRESETS[provider.kind].label} models can only be used for ${labels}.` })
+      }
 
       const data = {
         modelId: input.modelId,
@@ -252,11 +261,18 @@ export const aiProvidersRouter = createTRPCRouter({
       return { capability: input.capability }
     }),
 
-  getVoice: protectedProcedure({ requirePermission: permissions.AI_PROVIDERS_READ })
+  /* Every saved voice, one per TTS model. */
+  listVoiceProfiles: protectedProcedure({ requirePermission: permissions.AI_PROVIDERS_READ })
     .input(orgInput)
-    .query(async ({ ctx, input }) => {
-      const voice = await voiceService.findDefaultVoice(ctx.db, input.organizationId)
-      return voice ?? { id: null, name: 'Default narrator', ...DEFAULT_VOICE }
+    .query(({ ctx, input }) => voiceService.listVoiceProfiles(ctx.db, input.organizationId)),
+
+  /* Query: lists one model's voices live from its provider, outside any transaction. */
+  listVoices: protectedProcedure({ requirePermission: permissions.AI_PROVIDERS_READ })
+    .input(listModelVoicesSchema)
+    .query(async ({ input }) => {
+      const voices = await listModelVoices(input.organizationId, input.aiModelId)
+      if (!voices) throw new TRPCError({ code: 'NOT_FOUND', message: 'Model not found in this workspace.' })
+      return voices
     }),
 
   saveVoice: protectedProcedure({
@@ -264,16 +280,24 @@ export const aiProvidersRouter = createTRPCRouter({
     audit: { action: 'saveVoice', describe: 'Set the narration voice to {input.voice}' },
   })
     .input(saveVoiceProfileSchema)
-    .mutation(({ ctx, input }) =>
-      voiceService.upsertDefaultVoice(ctx.db, input.organizationId, {
+    .mutation(async ({ ctx, input }) => {
+      /* The voice's model must be a voice model in THIS workspace. */
+      const model = await aiProviderService.findModel(ctx.db, input.organizationId, input.aiModelId)
+      if (!model) throw new TRPCError({ code: 'NOT_FOUND', message: 'Model not found in this workspace.' })
+      if (!model.capabilities.includes(AiCapability.TTS)) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'That model is not set up for Narration.' })
+      }
+      return voiceService.upsertVoiceProfile(ctx.db, input.organizationId, {
+        aiModelId: input.aiModelId,
         voice: input.voice,
         speed: input.speed,
         instructions: input.instructions,
       })
-    ),
+    }),
 
   /* Query, not mutation: a provider call must not hold a DB transaction.
-   * Returns a short sample as a data URL the browser can play directly. */
+   * Plays the unsaved form values on the chosen model and returns a short
+   * sample as a data URL the browser can play directly. */
   previewVoice: protectedProcedure({ requirePermission: permissions.AI_PROVIDERS_UPDATE })
     .input(saveVoiceProfileSchema)
     .query(async ({ input }) => {
@@ -288,9 +312,8 @@ export const aiProvidersRouter = createTRPCRouter({
             taskId: null,
           },
           text: 'Welcome to the course. In this lesson, we will build something practical together, one step at a time.',
-          voice: input.voice,
-          speed: input.speed,
-          instructions: input.instructions,
+          profiles: [{ aiModelId: input.aiModelId, voice: input.voice, speed: input.speed, instructions: input.instructions }],
+          aiModelId: input.aiModelId,
         })
         return {
           dataUrl: `data:${speech.mimeType};base64,${Buffer.from(speech.audio).toString('base64')}`,
