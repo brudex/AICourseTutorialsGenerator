@@ -83,8 +83,8 @@ export {
   AI_PROVIDER_PRESETS,
   AI_CAPABILITY_LABELS,
   ROUTING_PRESET_LABELS,
-  VOICE_SUGGESTIONS,
-  voiceSuggestionsFor,
+  voiceCatalogFor,
+  resolveVoiceForModel,
   DEFAULT_VOICE,
 } from './ai-providers'
 export type { AiProviderPreset, SuggestedAiModel } from './ai-providers'

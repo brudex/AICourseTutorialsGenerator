@@ -84,7 +84,10 @@ export function AiProvidersSettings() {
       } else {
         await deleteModel.mutateAsync({ organizationId: orgId, id: pendingDelete.id })
       }
-      await utils.aiProviders.list.invalidate({ organizationId: orgId })
+      await Promise.all([
+        utils.aiProviders.list.invalidate({ organizationId: orgId }),
+        utils.aiProviders.listVoices.invalidate({ organizationId: orgId }),
+      ])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not delete.')
     } finally {
@@ -103,10 +106,6 @@ export function AiProvidersSettings() {
 
   const providers = list.data?.providers ?? []
   const routes = list.data?.routes ?? []
-  /* The provider model id behind the Narration route picks the voice choices. */
-  const narrationRoute = routes.find((r) => r.capability === 'TTS')
-  const narrationModelId =
-    providers.flatMap((p) => p.models).find((m) => m.id === narrationRoute?.modelId)?.modelId ?? null
 
   return (
     <div className="space-y-10">
@@ -267,9 +266,14 @@ export function AiProvidersSettings() {
               would wipe the form's own success message. */}
           <NarrationVoiceForm
             organizationId={orgId}
-            initial={{ voice: voice.data.voice, speed: voice.data.speed, instructions: voice.data.instructions }}
+            initial={{
+              aiModelId: voice.data.aiModelId,
+              voice: voice.data.voice,
+              speed: voice.data.speed,
+              instructions: voice.data.instructions,
+            }}
+            saved={voice.data.id !== null}
             canEdit={canUpdate}
-            narrationModelId={narrationModelId}
           />
         </SettingsSection>
       ) : null}

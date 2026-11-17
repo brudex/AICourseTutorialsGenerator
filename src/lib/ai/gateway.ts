@@ -30,7 +30,7 @@ import 'server-only'
 import { z } from 'zod'
 
 import type { AiCapability } from '@/generated/prisma'
-import { prisma, type DbClient } from '@/lib/config'
+import { prisma, resolveVoiceForModel, voiceCatalogFor, type DbClient } from '@/lib/config'
 import type {
   AiCallContext,
   AiGenerateResult,
@@ -38,7 +38,11 @@ import type {
   AiSpeechResult,
   AiUsage,
   ChatMessage,
+  NarrationVoiceModel,
+  NarrationVoiceOptions,
   ProviderConnectionResult,
+  LiveVoiceList,
+  SavedNarrationVoice,
 } from '@/lib/types'
 import { SPARE_MODEL_AI_ERROR_KINDS } from '@/lib/types'
 import * as aiProviderService from '@/services/ai-provider.service'
@@ -50,11 +54,13 @@ import {
   createImage,
   createSpeech,
   listProviderModels,
+  listSpeechVoices,
   type ChatCompletionOutcome,
   type ProviderEndpoint,
   type ResponseFormatRequest,
 } from './adapters/openai-compatible'
 import { createDashScopeImage, createDashScopeSpeech } from './adapters/dashscope'
+import { createElevenLabsSpeech, listElevenLabsModels, listElevenLabsVoices } from './adapters/elevenlabs'
 import { calculateCostMicros } from './cost'
 import { decryptApiKey } from './crypto'
 import { AiGatewayError, toAiGatewayError } from './errors'
@@ -381,7 +387,7 @@ export async function testProviderConnection(
 
   const startedAt = Date.now()
   try {
-    const modelIds = await listProviderModels({
+    const modelIds = await listModelsFor(provider.kind, {
       baseUrl: provider.baseUrl,
       apiKey: provider.apiKeyCiphertext ? decryptApiKey(provider.apiKeyCiphertext) : null,
     })
@@ -398,37 +404,47 @@ export async function testProviderConnection(
 }
 
 /**
- * SOURCE OF TRUTH KEYWORDS: synthesizeSpeech, narration audio, TTS cost
+ * SOURCE OF TRUTH KEYWORDS: synthesizeSpeech, narration audio, TTS cost,
+ *   voice per model, ElevenLabs speech, DashScope speech
  *
  * WHAT:  Voices `text` with the workspace's routed TTS model (primary, then
- *        fallback) and returns the audio with its measured duration.
+ *        fallback) and returns the audio with its measured duration and the
+ *        voice id that spoke it.
  * WHY:   Same accounting as text calls: one AiUsageEvent per provider call.
  *        TTS is billed per character, so characters are recorded in the
  *        ledger's input-units column and priced with the model's
- *        inputPricePerMTok (USD per 1M characters).
+ *        inputPricePerMTok (USD per 1M characters). Each model gets a voice
+ *        it accepts (resolveVoiceForModel) and only the controls it honours
+ *        (voiceCatalogFor): speed clamped to its range, style only if used.
  */
 export async function synthesizeSpeech(request: {
   context: AiCallContext
   text: string
-  voice: string
+  /** The workspace's saved voice; null = each model's default voice. */
+  voice: SavedNarrationVoice | null
   speed: number
   instructions: string
 }): Promise<AiSpeechResult> {
   const base: BaseRequest = { context: request.context, capability: Capability.TTS, messages: [] }
   return withFallback(base, async (model) => {
     const startedAt = Date.now()
+    const voice = resolveVoiceForModel({ id: model.id, modelId: model.modelId, kind: model.provider.kind }, request.voice)
+    const { controls } = voiceCatalogFor(model.provider.kind, model.modelId)
+    const speed = controls.speed ? Math.min(controls.speed.max, Math.max(controls.speed.min, request.speed)) : 1
     try {
-      /* Alibaba voices use DashScope's native speech API; everyone else /audio/speech. */
+      /* Alibaba and ElevenLabs use their own speech APIs; everyone else /audio/speech. */
       const audio =
         model.provider.kind === ProviderKind.ALIBABA
-          ? await createDashScopeSpeech(endpointFor(model), { model: model.modelId, voice: request.voice, input: request.text })
-          : await createSpeech(endpointFor(model), {
-              model: model.modelId,
-              voice: request.voice,
-              input: request.text,
-              speed: request.speed,
-              instructions: request.instructions,
-            })
+          ? await createDashScopeSpeech(endpointFor(model), { model: model.modelId, voice, input: request.text })
+          : model.provider.kind === ProviderKind.ELEVENLABS
+            ? await createElevenLabsSpeech(endpointFor(model), { model: model.modelId, voice, input: request.text, speed })
+            : await createSpeech(endpointFor(model), {
+                model: model.modelId,
+                voice,
+                input: request.text,
+                speed,
+                instructions: controls.style ? request.instructions : '',
+              })
       const probed = await probeAudio(audio)
       const characters = request.text.length
       const usage: AiUsage = {
@@ -443,7 +459,7 @@ export async function synthesizeSpeech(request: {
         latencyMs: Date.now() - startedAt,
       }
       await recordUsage(model, base, usage, { success: true })
-      return { audio, ...probed, usage, model: modelSummary(model) }
+      return { audio, ...probed, usage, voice, model: modelSummary(model) }
     } catch (error) {
       const gatewayError = toAiGatewayError(error)
       await recordUsage(model, base, { ...emptyUsage(), latencyMs: Date.now() - startedAt }, { success: false, error: gatewayError })
@@ -513,18 +529,98 @@ export async function generateImage(request: {
 }
 
 /**
+ * SOURCE OF TRUTH KEYWORDS: listModelsFor, provider model list, connection test
+ *
+ * WHAT:  Lists a provider's model ids the way its kind requires (ElevenLabs
+ *        has its own API; everyone else answers GET /models).
+ */
+function listModelsFor(kind: ProviderKind, endpoint: ProviderEndpoint): Promise<string[]> {
+  return kind === ProviderKind.ELEVENLABS ? listElevenLabsModels(endpoint) : listProviderModels(endpoint)
+}
+
+/**
  * SOURCE OF TRUTH KEYWORDS: verifyProviderCredentials
  *
  * WHAT:  Checks a base URL + key (not yet saved) by listing models. Same
  *        result shape as testProviderConnection, so the UI handles both alike.
  */
-export async function verifyProviderCredentials(endpoint: ProviderEndpoint): Promise<ProviderConnectionResult> {
+export async function verifyProviderCredentials(kind: ProviderKind, endpoint: ProviderEndpoint): Promise<ProviderConnectionResult> {
   const startedAt = Date.now()
   try {
-    const modelIds = await listProviderModels(endpoint)
+    const modelIds = await listModelsFor(kind, endpoint)
     return { ok: true, latencyMs: Date.now() - startedAt, modelIds }
   } catch (error) {
     const gatewayError = toAiGatewayError(error)
     return { ok: false, latencyMs: Date.now() - startedAt, errorKind: gatewayError.kind, message: gatewayError.message }
   }
+}
+
+/**
+ * SOURCE OF TRUTH KEYWORDS: LIVE_VOICE_SOURCES, live voice list per provider kind
+ *
+ * WHAT:  How each provider kind lists its own voices. `complete` lists
+ *        replace the built-in catalog; partial ones (custom voices only) are
+ *        added to it. Kinds missing here use the catalog alone (OpenAI and
+ *        Alibaba publish no voice list).
+ * WHY:   Supporting another provider's voice list is one entry here.
+ */
+const LIVE_VOICE_SOURCES: Partial<Record<ProviderKind, (endpoint: ProviderEndpoint, modelId: string) => Promise<LiveVoiceList>>> = {
+  ELEVENLABS: async (endpoint) => ({ voices: await listElevenLabsVoices(endpoint), complete: true }),
+  LOCAL: listSpeechVoices,
+  CUSTOM: listSpeechVoices,
+}
+
+async function narrationVoiceModel(model: ModelWithCredentials): Promise<NarrationVoiceModel> {
+  const catalog = voiceCatalogFor(model.provider.kind, model.modelId)
+  const listLive = LIVE_VOICE_SOURCES[model.provider.kind]
+  let live: LiveVoiceList | null = null
+  let notice: string | null = null
+  if (listLive) {
+    try {
+      live = await listLive(endpointFor(model), model.modelId)
+    } catch (error) {
+      notice = `Could not load voices from ${model.provider.name}: ${toAiGatewayError(error).message}`
+    }
+  }
+  const liveVoices = live?.voices ?? []
+  const voices =
+    live?.complete && liveVoices.length > 0
+      ? liveVoices
+      : [...liveVoices, ...catalog.voices.filter((voice) => !liveVoices.some((l) => l.id === voice.id))]
+  return {
+    aiModelId: model.id,
+    modelId: model.modelId,
+    displayName: model.displayName,
+    providerName: model.provider.name,
+    providerKind: model.provider.kind,
+    voices,
+    defaultVoice: voices.some((voice) => voice.id === catalog.defaultVoice) ? catalog.defaultVoice : voices[0]?.id ?? catalog.defaultVoice,
+    controls: catalog.controls,
+    source: liveVoices.length > 0 ? 'live' : 'catalog',
+    notice,
+  }
+}
+
+/**
+ * SOURCE OF TRUTH KEYWORDS: listNarrationVoices, narration voice options,
+ *   voices from provider, ElevenLabs voices, routed TTS model voices
+ *
+ * WHAT:  The voices each model routed to Narration offers (the narrator's
+ *        override, else primary then fallback), read live from the provider
+ *        when it can list them and from the catalog otherwise, with the
+ *        controls each model honours.
+ * WHY:   The voice picker must show what the connected provider really has
+ *        (cloned ElevenLabs voices included). A provider that cannot be
+ *        reached still returns its catalog, with a notice saying why.
+ * WHERE: aiProviders.listVoices.
+ */
+export async function listNarrationVoices(organizationId: string): Promise<NarrationVoiceOptions> {
+  let routed: ModelWithCredentials[]
+  try {
+    routed = await resolveModelsForCall(prisma, { organizationId, capability: Capability.TTS, agentId: 'narrator' })
+  } catch {
+    return { primary: null, fallback: null }
+  }
+  const [primary, fallback] = await Promise.all(routed.slice(0, 2).map(narrationVoiceModel))
+  return { primary: primary ?? null, fallback: fallback ?? null }
 }

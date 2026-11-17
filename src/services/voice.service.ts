@@ -2,7 +2,7 @@ import 'server-only'
 
 /**
  * SOURCE OF TRUTH KEYWORDS: voiceService, findDefaultVoice,
- *   upsertDefaultVoice, VoiceProfile
+ *   upsertDefaultVoice, VoiceProfile, aiModelId
  *
  * WHAT:  Pure Prisma for the workspace's default narration voice.
  * WHY:   One default profile per workspace today; the narrator reads it, the
@@ -17,14 +17,14 @@ import type { DbClient } from '@/lib/config'
 export function findDefaultVoice(db: DbClient, organizationId: string) {
   return db.voiceProfile.findFirst({
     where: { organizationId, isDefault: true },
-    select: { id: true, name: true, voice: true, speed: true, instructions: true },
+    select: { id: true, name: true, aiModelId: true, voice: true, speed: true, instructions: true },
   })
 }
 
 export async function upsertDefaultVoice(
   db: DbClient,
   organizationId: string,
-  data: { voice: string; speed: number; instructions: string }
+  data: { aiModelId: string | null; voice: string; speed: number; instructions: string }
 ) {
   const existing = await findDefaultVoice(db, organizationId)
   return existing

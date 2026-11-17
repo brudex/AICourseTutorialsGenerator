@@ -1,7 +1,8 @@
 /**
  * SOURCE OF TRUTH KEYWORDS: aiProvidersRouter, aiProviders.list,
  *   aiProviders.create, aiProviders.testConnection, aiProviders.upsertModel,
- *   aiProviders.setRoute, aiProviders.applyPreset, bring-your-own-key
+ *   aiProviders.setRoute, aiProviders.applyPreset, aiProviders.listVoices,
+ *   bring-your-own-key
  *
  * WHAT:  Workspace AI provider connections, their models, and the capability
  *        routing table (Settings → AI Providers).
@@ -42,11 +43,12 @@ import {
   buildPresetRoutes,
   decryptApiKey,
   encryptApiKey,
+  listNarrationVoices,
   synthesizeSpeech,
   testProviderConnection,
   verifyProviderCredentials,
 } from '@/lib/ai'
-import { DEFAULT_VOICE } from '@/lib/config'
+import { AI_CAPABILITY_LABELS, AI_PROVIDER_PRESETS, DEFAULT_VOICE } from '@/lib/config'
 import * as voiceService from '@/services/voice.service'
 import * as aiProviderService from '@/services/ai-provider.service'
 
@@ -168,7 +170,7 @@ export const aiProvidersRouter = createTRPCRouter({
         if (!stored) throw new TRPCError({ code: 'NOT_FOUND', message: 'Provider not found.' })
         apiKey = stored.apiKeyCiphertext ? decryptApiKey(stored.apiKeyCiphertext) : null
       }
-      return verifyProviderCredentials({ baseUrl: input.baseUrl, apiKey })
+      return verifyProviderCredentials(input.kind, { baseUrl: input.baseUrl, apiKey })
     }),
 
   upsertModel: protectedProcedure({
@@ -179,6 +181,12 @@ export const aiProvidersRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const provider = await aiProviderService.findProviderCredentials(ctx.db, input.organizationId, input.providerId)
       if (!provider) throw new TRPCError({ code: 'NOT_FOUND', message: 'Provider not found.' })
+      /* Voice only providers (ElevenLabs) cannot serve text or image capabilities. */
+      const allowed = AI_PROVIDER_PRESETS[provider.kind].allowedCapabilities
+      if (allowed && input.capabilities.some((c) => !allowed.includes(c))) {
+        const labels = allowed.map((c) => AI_CAPABILITY_LABELS[c].label).join(', ')
+        throw new TRPCError({ code: 'BAD_REQUEST', message: `${AI_PROVIDER_PRESETS[provider.kind].label} models can only be used for ${labels}.` })
+      }
 
       const data = {
         modelId: input.modelId,
@@ -256,21 +264,31 @@ export const aiProvidersRouter = createTRPCRouter({
     .input(orgInput)
     .query(async ({ ctx, input }) => {
       const voice = await voiceService.findDefaultVoice(ctx.db, input.organizationId)
-      return voice ?? { id: null, name: 'Default narrator', ...DEFAULT_VOICE }
+      return voice ?? { id: null, name: 'Default narrator', aiModelId: null, ...DEFAULT_VOICE }
     }),
+
+  /* Query: lists voices live from the provider, outside any transaction. */
+  listVoices: protectedProcedure({ requirePermission: permissions.AI_PROVIDERS_READ })
+    .input(orgInput)
+    .query(({ input }) => listNarrationVoices(input.organizationId)),
 
   saveVoice: protectedProcedure({
     requirePermission: permissions.AI_PROVIDERS_UPDATE,
     audit: { action: 'saveVoice', describe: 'Set the narration voice to {input.voice}' },
   })
     .input(saveVoiceProfileSchema)
-    .mutation(({ ctx, input }) =>
-      voiceService.upsertDefaultVoice(ctx.db, input.organizationId, {
+    .mutation(async ({ ctx, input }) => {
+      /* The model the voice belongs to must be in THIS workspace. */
+      if (input.aiModelId && !(await aiProviderService.findModel(ctx.db, input.organizationId, input.aiModelId))) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Model not found in this workspace.' })
+      }
+      return voiceService.upsertDefaultVoice(ctx.db, input.organizationId, {
+        aiModelId: input.aiModelId,
         voice: input.voice,
         speed: input.speed,
         instructions: input.instructions,
       })
-    ),
+    }),
 
   /* Query, not mutation: a provider call must not hold a DB transaction.
    * Returns a short sample as a data URL the browser can play directly. */
@@ -288,7 +306,7 @@ export const aiProvidersRouter = createTRPCRouter({
             taskId: null,
           },
           text: 'Welcome to the course. In this lesson, we will build something practical together, one step at a time.',
-          voice: input.voice,
+          voice: { aiModelId: input.aiModelId, voice: input.voice },
           speed: input.speed,
           instructions: input.instructions,
         })

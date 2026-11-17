@@ -202,6 +202,12 @@ export {
   dashScopeSpeechResponseSchema,
   dashScopeImageResponseSchema,
   openAiImageResponseSchema,
+  VOICE_CATALOG_SOURCES,
+  elevenLabsVoicesResponseSchema,
+  elevenLabsModelsResponseSchema,
+  elevenLabsErrorSchema,
+  compatibleVoicesResponseSchema,
+  siliconFlowVoiceListSchema,
 } from './ai'
 export type {
   CreateAiProviderValues,
@@ -220,6 +226,13 @@ export type {
   AiSpeechResult,
   AiImageResult,
   VerifyAiProviderValues,
+  VoiceOption,
+  VoiceControls,
+  VoiceCatalogSource,
+  LiveVoiceList,
+  SavedNarrationVoice,
+  NarrationVoiceModel,
+  NarrationVoiceOptions,
 } from './ai'
 export {
   TERMINAL_TASK_STATUSES,

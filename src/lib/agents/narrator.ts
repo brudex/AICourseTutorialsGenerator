@@ -62,6 +62,7 @@ export const narratorAgent: AgentDefinition = {
       voiceService.findDefaultVoice(db, job.organizationId),
       courseService.findCourse(db, job.organizationId, job.courseId),
     ])
+    /* Speed and style from the saved profile; the voice id is resolved per model by the gateway. */
     const voice = savedVoice ?? DEFAULT_VOICE
     /* The workspace voice, paced and styled for the course's learner level. */
     const level = courseBriefSchema.safeParse(course?.brief).data?.audienceProfile.level ?? DEFAULT_LEARNER_LEVEL
@@ -72,6 +73,8 @@ export const narratorAgent: AgentDefinition = {
     const storage = getStorage()
     const keyBase = { organizationId: job.organizationId, courseId: job.courseId, lessonId }
     const voiced: VoicedScene[] = []
+    /* The voice id that actually spoke (it differs from the saved one on a fallback model). */
+    let spokenVoice = voice.voice
 
     for (const row of rows) {
       const speech = await synthesizeSpeech({
@@ -84,10 +87,11 @@ export const narratorAgent: AgentDefinition = {
           taskId: task.id,
         },
         text: row.narration,
-        voice: voice.voice,
+        voice: savedVoice ? { aiModelId: savedVoice.aiModelId, voice: savedVoice.voice } : null,
         speed,
         instructions,
       })
+      spokenVoice = speech.voice
       const storageKey = sceneAssetKey({ ...keyBase, sceneId: row.id, variant: 'narration', extension: speech.extension })
       await storage.put({ key: storageKey, body: speech.audio, contentType: speech.mimeType })
       voiced.push({
@@ -149,6 +153,6 @@ export const narratorAgent: AgentDefinition = {
       { timeout: 30_000 }
     )
 
-    return { output: { scenes: voiced.length, durationMs: totalMs, voice: voice.voice } }
+    return { output: { scenes: voiced.length, durationMs: totalMs, voice: spokenVoice } }
   },
 }

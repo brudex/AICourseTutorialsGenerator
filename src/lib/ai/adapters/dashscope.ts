@@ -21,6 +21,7 @@ import { dashScopeImageResponseSchema, dashScopeSpeechResponseSchema } from '@/l
 import { AiGatewayError, aiErrorFromStatus, toAiGatewayError } from '../errors'
 import { assertProviderUrlAllowed } from '../url-guard'
 import type { ProviderEndpoint } from './openai-compatible'
+import { splitSpeechText } from './speech-text'
 
 const SPEECH_TIMEOUT_MS = 120_000
 /* Characters per request; well inside the model's input limit. */
@@ -32,25 +33,6 @@ export function dashScopeApiBase(baseUrl: string): string {
   const url = new URL(baseUrl)
   url.pathname = '/api/v1'
   return url.toString().replace(/\/$/, '')
-}
-
-function splitText(text: string): string[] {
-  const sentences = text.split(/(?<=[.!?。！？])\s+/).filter(Boolean)
-  const chunks: string[] = []
-  let current = ''
-  for (const sentence of sentences) {
-    if (current && current.length + sentence.length + 1 > CHUNK_CHARS) {
-      chunks.push(current)
-      current = sentence
-    } else {
-      current = current ? `${current} ${sentence}` : sentence
-    }
-  }
-  if (current) chunks.push(current)
-  /* A single sentence longer than a chunk is cut on a space. */
-  return chunks.flatMap((chunk) =>
-    chunk.length <= CHUNK_CHARS ? [chunk] : chunk.match(new RegExp(`.{1,${CHUNK_CHARS}}(\\s|$)`, 'g')) ?? [chunk]
-  )
 }
 
 interface WavParts {
@@ -133,7 +115,7 @@ export async function createDashScopeSpeech(
   await assertProviderUrlAllowed(endpoint.baseUrl)
   try {
     const files: Uint8Array[] = []
-    for (const text of splitText(params.input.trim())) files.push(await speakChunk(endpoint, { ...params, text }))
+    for (const text of splitSpeechText(params.input, CHUNK_CHARS)) files.push(await speakChunk(endpoint, { ...params, text }))
     return joinWav(files)
   } catch (error) {
     throw toAiGatewayError(error)

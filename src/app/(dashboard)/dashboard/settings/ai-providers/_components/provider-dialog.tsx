@@ -31,6 +31,7 @@ import {
   updateAiProviderSchema,
   type CreateAiProviderValues,
   type UpdateAiProviderValues,
+  type VerifyAiProviderValues,
 } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import {
@@ -105,7 +106,7 @@ function useCredentialCheck() {
   const [unverifiedReason, setUnverifiedReason] = React.useState<string | null>(null)
 
   async function check(
-    input: { organizationId: string; providerId: string | null; baseUrl: string; apiKey: string },
+    input: VerifyAiProviderValues,
     onRejected: (message: string) => void
   ): Promise<VerifyOutcome> {
     setChecking(true)
@@ -177,6 +178,7 @@ function CreateProviderForm({ organizationId, onDone }: { organizationId: string
       await create.mutateAsync(values)
       await Promise.all([
         utils.aiProviders.list.invalidate({ organizationId }),
+        utils.aiProviders.listVoices.invalidate({ organizationId }),
         utils.aiProviders.testConnection.invalidate(),
       ])
       onDone()
@@ -187,7 +189,7 @@ function CreateProviderForm({ organizationId, onDone }: { organizationId: string
 
   async function onSubmit(values: CreateAiProviderValues) {
     const outcome = await credentials.check(
-      { organizationId, providerId: null, baseUrl: values.baseUrl, apiKey: values.apiKey },
+      { organizationId, providerId: null, kind: values.kind, baseUrl: values.baseUrl, apiKey: values.apiKey },
       (message) => form.setError('apiKey', { message })
     )
     if (outcome === 'ok') await save(values)
@@ -317,6 +319,7 @@ function EditProviderForm({
       await update.mutateAsync(values)
       await Promise.all([
         utils.aiProviders.list.invalidate({ organizationId }),
+        utils.aiProviders.listVoices.invalidate({ organizationId }),
         utils.aiProviders.testConnection.invalidate(),
       ])
       onDone()
@@ -330,7 +333,7 @@ function EditProviderForm({
     const changed = values.apiKey.length > 0 || values.baseUrl !== provider.baseUrl
     if (!changed || !values.isEnabled) return save(values)
     const outcome = await credentials.check(
-      { organizationId, providerId: provider.id, baseUrl: values.baseUrl, apiKey: values.apiKey },
+      { organizationId, providerId: provider.id, kind: provider.kind, baseUrl: values.baseUrl, apiKey: values.apiKey },
       (message) => form.setError('apiKey', { message })
     )
     if (outcome === 'ok') await save(values)
