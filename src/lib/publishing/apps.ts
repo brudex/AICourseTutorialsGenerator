@@ -9,7 +9,7 @@ import 'server-only'
  *        client (YouTube, Google Classroom, Google Drive), one Vimeo app, and
  *        one Canvas developer key per school Canvas site. Read per call from
  *        the portal settings (Publishing apps), so new keys apply without a
- *        restart. Google falls back to the sign-in client in the server file.
+ *        restart. Google falls back to the sign in client (also a portal setting).
  * WHY:   Customers never handle keys: the operator applies for them once and
  *        customers just click Connect and sign in to their own account.
  *        Canvas keys are per school (each school runs its own Canvas and
@@ -19,19 +19,17 @@ import 'server-only'
  *        router (to tell the UI which platforms can connect).
  */
 
+import { googleSignInApp } from '@/lib/config/sign-in'
 import { platformSettingText } from '@/lib/platform-settings'
-import { canvasOAuthAppsSchema } from '@/lib/types'
+import { canvasOAuthAppsSchema, type OAuthApp } from '@/lib/types'
 
-export interface OAuthApp {
-  clientId: string
-  clientSecret: string
-}
+export type { OAuthApp } from '@/lib/types'
 
 /** The publishing Google client, else the sign-in client; null when neither is set. */
 export function publishingGoogleApp(): OAuthApp | null {
-  const clientId = platformSettingText('googlePublishingClientId') || process.env['NEXT_PUBLIC_GOOGLE_CLIENT_ID']
-  const clientSecret = platformSettingText('googlePublishingClientSecret') || process.env['GOOGLE_CLIENT_SECRET']
-  return clientId && clientSecret ? { clientId, clientSecret } : null
+  const clientId = platformSettingText('googlePublishingClientId')
+  const clientSecret = platformSettingText('googlePublishingClientSecret')
+  return clientId && clientSecret ? { clientId, clientSecret } : googleSignInApp()
 }
 
 function canvasApps(): Map<string, OAuthApp> {

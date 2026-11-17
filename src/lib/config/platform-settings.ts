@@ -13,7 +13,7 @@
  *
  * WHAT:  Every operator setting that is edited in /portal/settings instead of
  *        the server file: email, publishing apps, media storage, rendering,
- *        background worker, security and sign up.
+ *        background worker, security, sign up and sign in, and branding.
  * WHY:   One registry drives the database rows, the typed readers, the form
  *        and its validation. Values are read at runtime from the database, so
  *        a change applies within PLATFORM_SETTINGS_REFRESH_MS with no restart.
@@ -286,8 +286,8 @@ export const PLATFORM_SETTING_GROUPS = [
   },
   {
     id: 'signup',
-    label: 'Sign up',
-    description: 'Who can create an account',
+    label: 'Sign up and sign in',
+    description: 'Who can create an account and how people sign in',
     fields: [
       {
         key: 'registrationOpen',
@@ -296,6 +296,46 @@ export const PLATFORM_SETTING_GROUPS = [
         kind: 'boolean',
         defaultValue: 'true',
         envFallback: 'NEXT_PUBLIC_REGISTRATION_OPEN',
+      },
+      {
+        key: 'googleSignInClientId',
+        label: 'Google sign in client ID',
+        help: 'Shows Continue with Google. Redirect address: <app address>/api/auth/callback/google.',
+        kind: 'text',
+        defaultValue: '',
+        envFallback: 'NEXT_PUBLIC_GOOGLE_CLIENT_ID',
+      },
+      {
+        key: 'googleSignInClientSecret',
+        label: 'Google sign in client secret',
+        help: 'The secret of the same Google OAuth client.',
+        kind: 'text',
+        secret: true,
+        defaultValue: '',
+        envFallback: 'GOOGLE_CLIENT_SECRET',
+      },
+    ],
+  },
+  {
+    id: 'branding',
+    label: 'Branding',
+    description: 'The name and description shown in the app, emails and browser tabs',
+    fields: [
+      {
+        key: 'appName',
+        label: 'App name',
+        help: 'Shown in the sidebar, sign in pages, emails and page titles.',
+        kind: 'text',
+        defaultValue: 'Penrose Studio',
+        envFallback: 'NEXT_PUBLIC_APP_NAME',
+      },
+      {
+        key: 'appDescription',
+        label: 'Description',
+        help: 'Used for search results and link previews. Leave blank for the default.',
+        kind: 'text',
+        defaultValue: '',
+        envFallback: 'NEXT_PUBLIC_APP_DESCRIPTION',
       },
     ],
   },

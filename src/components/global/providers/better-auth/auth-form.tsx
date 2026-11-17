@@ -9,7 +9,7 @@
 'use client'
 
 /**
- * SOURCE OF TRUTH KEYWORDS: AuthForm, AuthFormProps, GOOGLE_OAUTH_ENABLED,
+ * SOURCE OF TRUTH KEYWORDS: AuthForm, AuthFormProps, googleEnabled,
  *   authClient, signInSchema, signUpSchema, GoogleGlyph
  *
  * WHAT:  Reusable email+password+Google auth surface. `AuthForm` is a thin
@@ -69,10 +69,9 @@ import {
 export interface AuthFormProps {
   mode: AuthFormMode
   callbackURL?: Route
+  /** Google sign in is configured in portal settings (isGoogleSignInEnabled). */
+  googleEnabled?: boolean
 }
-
-/* Mirrors auth.ts: Google is only wired when the public client ID is set. */
-const GOOGLE_OAUTH_ENABLED = Boolean(process.env['NEXT_PUBLIC_GOOGLE_CLIENT_ID'])
 
 /**
  * SOURCE OF TRUTH KEYWORDS: AuthForm
@@ -80,17 +79,17 @@ const GOOGLE_OAUTH_ENABLED = Boolean(process.env['NEXT_PUBLIC_GOOGLE_CLIENT_ID']
  * WHAT:  Selects the concrete form by `mode`.
  * WHERE: Rendered by sign-in/page.tsx and sign-up/page.tsx.
  */
-export function AuthForm({ mode, callbackURL = '/' }: AuthFormProps) {
+export function AuthForm({ mode, callbackURL = '/', googleEnabled = false }: AuthFormProps) {
   return mode === 'sign-in' ? (
-    <SignInForm callbackURL={callbackURL} />
+    <SignInForm callbackURL={callbackURL} googleEnabled={googleEnabled} />
   ) : (
-    <SignUpForm callbackURL={callbackURL} />
+    <SignUpForm callbackURL={callbackURL} googleEnabled={googleEnabled} />
   )
 }
 
 /* ---------- Sign-in ---------- */
 
-function SignInForm({ callbackURL }: { callbackURL: Route }) {
+function SignInForm({ callbackURL, googleEnabled }: { callbackURL: Route; googleEnabled: boolean }) {
   /* '/' is the default, not a destination worth threading through the URL. */
   const carriedCallback = callbackURL === '/' ? null : callbackURL
   const form = useForm<SignInValues>({
@@ -170,6 +169,7 @@ function SignInForm({ callbackURL }: { callbackURL: Route }) {
           />
           <AuthSubmit label="Sign in" isSubmitting={isSubmitting} isBusy={isBusy} />
           <GoogleButton
+            enabled={googleEnabled}
             label="Continue with Google"
             onClick={() => google.run(callbackURL, setError)}
             isPending={google.isPending}
@@ -188,7 +188,7 @@ function SignInForm({ callbackURL }: { callbackURL: Route }) {
 
 /* ---------- Sign-up ---------- */
 
-function SignUpForm({ callbackURL }: { callbackURL: Route }) {
+function SignUpForm({ callbackURL, googleEnabled }: { callbackURL: Route; googleEnabled: boolean }) {
   /* '/' is the default, not a destination worth threading through the URL. */
   const carriedCallback = callbackURL === '/' ? null : callbackURL
   const [submittedEmail, setSubmittedEmail] = React.useState<string | null>(null)
@@ -316,6 +316,7 @@ function SignUpForm({ callbackURL }: { callbackURL: Route }) {
           />
           <AuthSubmit label="Sign up" isSubmitting={isSubmitting} isBusy={isBusy} />
           <GoogleButton
+            enabled={googleEnabled}
             label="Continue with Google"
             onClick={() => google.run(callbackURL, setError)}
             isPending={google.isPending}
@@ -361,17 +362,19 @@ function AuthSubmit({
 }
 
 function GoogleButton({
+  enabled,
   label,
   onClick,
   isPending,
   isBusy,
 }: {
+  enabled: boolean
   label: string
   onClick: () => void
   isPending: boolean
   isBusy: boolean
 }) {
-  if (!GOOGLE_OAUTH_ENABLED) return null
+  if (!enabled) return null
   return (
     <>
       <div className="relative text-center text-sm after:absolute after:inset-0 after:top-1/2 after:z-0 after:flex after:items-center after:border-t after:border-border">

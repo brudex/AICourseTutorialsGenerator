@@ -777,8 +777,9 @@ model AssessmentItem {
 //   AgentModelOverride, ProviderKind, AiCapability
 // ============================================================================
 
-/// ProviderKind — every MVP 1 provider speaks the OpenAI-compatible protocol;
-/// the kind selects base-URL presets and per-provider quirks in the adapter.
+/// ProviderKind — most providers speak the OpenAI-compatible protocol; the
+/// kind selects base-URL presets and per-provider quirks in the adapter.
+/// ELEVENLABS is voice only and uses its own API (adapters/elevenlabs.ts).
 enum ProviderKind {
   ALIBABA
   DEEPSEEK
@@ -786,6 +787,7 @@ enum ProviderKind {
   OPENROUTER
   LOCAL
   CUSTOM
+  ELEVENLABS
 }
 
 /// AiCapability — what an agent asks for instead of a model name (blueprint §23).
@@ -847,6 +849,7 @@ model AiModel {
   fallbackRoutes CapabilityRoute[]    @relation("CapabilityRouteFallback")
   agentOverrides AgentModelOverride[]
   aiUsageEvents  AiUsageEvent[]
+  voiceProfiles  VoiceProfile[]
 
   @@unique([providerId, modelId])
   @@index([organizationId])
@@ -1095,14 +1098,19 @@ model Asset {
 }
 
 /// VoiceProfile — how narration sounds (blueprint §14): the provider voice
-/// id, speaking speed, and style instructions. The TTS *model* is chosen by
-/// the TTS capability route; the profile only picks the voice on it. One
-/// default profile per workspace for now (per-course voices later).
+/// id, speaking speed, and style instructions for ONE TTS model. The TTS
+/// *model* is chosen by the TTS capability route; each model keeps its own
+/// voice because voice ids only work on their own model. A model with no
+/// profile narrates with its catalog default (resolveVoiceForModel). A null
+/// aiModelId is a profile saved before voices were per model; it still
+/// applies to models without their own profile.
 ///
-/// SOURCE OF TRUTH KEYWORDS: VoiceProfile, narration voice, TTS voice
+/// SOURCE OF TRUTH KEYWORDS: VoiceProfile, narration voice, TTS voice,
+///   aiModelId, voice per model
 model VoiceProfile {
   id             String   @id @default(cuid())
   organizationId String
+  aiModelId      String?
   name           String
   voice          String
   speed          Float    @default(1)
@@ -1112,8 +1120,10 @@ model VoiceProfile {
   updatedAt      DateTime @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  aiModel      AiModel?     @relation(fields: [aiModelId], references: [id], onDelete: SetNull)
 
-  @@index([organizationId])
+  @@unique([organizationId, aiModelId])
+  @@index([aiModelId])
   @@map("voice_profile")
 }
 

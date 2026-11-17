@@ -25,7 +25,7 @@ import { toast } from 'sonner'
 
 import { PublishingPlatform } from '@/generated/prisma'
 import { trpc } from '@/trpc/react-provider'
-import { APP_NAME } from '@/lib/config/branding'
+import { useBranding } from '@/components/global/branding'
 import {
   connectWordPressSchema,
   siteAddressSchema,
@@ -124,13 +124,14 @@ function AddressStep({ organizationId, onManual, onCancel }: { organizationId: s
 
 function ManualStep({ organizationId, baseUrl, onBack, onDone }: { organizationId: string; baseUrl: string; onBack: () => void; onDone: () => void }) {
   const utils = trpc.useUtils()
+  const { appName } = useBranding()
   const connect = trpc.publishing.connectWordPress.useMutation()
   const [error, setError] = React.useState<string | null>(null)
   const form = useForm<ConnectWordPressValues>({
     resolver: zodResolver(connectWordPressSchema),
     defaultValues: { organizationId, baseUrl, username: '', appPassword: '' },
   })
-  const approvalUrl = `${baseUrl}/wp-admin/authorize-application.php?${new URLSearchParams({ app_name: APP_NAME }).toString()}`
+  const approvalUrl = `${baseUrl}/wp-admin/authorize-application.php?${new URLSearchParams({ app_name: appName }).toString()}`
 
   async function onSubmit(values: ConnectWordPressValues) {
     setError(null)

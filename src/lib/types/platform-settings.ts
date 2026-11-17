@@ -53,6 +53,28 @@ export const PLATFORM_SETTING_JSON_SCHEMAS = {
 } as const
 export type PlatformSettingJsonShape = keyof typeof PLATFORM_SETTING_JSON_SCHEMAS
 
+/**
+ * SOURCE OF TRUTH KEYWORDS: OAuthApp, operator OAuth client
+ *
+ * WHAT:  An OAuth client the operator registered (client ID + secret).
+ * WHERE: Google sign in (src/lib/config/sign-in.ts) and the publishing apps
+ *        (src/lib/publishing/apps.ts and its platform clients).
+ */
+export interface OAuthApp {
+  clientId: string
+  clientSecret: string
+}
+
+/**
+ * SOURCE OF TRUTH KEYWORDS: BrandingValues
+ *
+ * WHAT:  Branding the server hands to browser components.
+ * WHERE: BrandingProvider (src/components/global/branding), root layout.
+ */
+export interface BrandingValues {
+  appName: string
+}
+
 export interface PlatformSettingOption {
   value: string
   label: string

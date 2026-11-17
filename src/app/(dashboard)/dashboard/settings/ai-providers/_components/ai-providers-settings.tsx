@@ -17,10 +17,12 @@
 import * as React from 'react'
 import { PlusIcon } from 'lucide-react'
 
+import { AiCapability } from '@/generated/prisma'
 import { trpc } from '@/trpc/react-provider'
 import { useActiveOrganization, useActiveOrganizationId } from '@/hooks/use-active-organization'
 import { permissions } from '@/lib/permissions'
 import { AI_CAPABILITY_LABELS, AI_PROVIDER_PRESETS } from '@/lib/config'
+import type { NarrationModelChoice } from '@/lib/types'
 import { SettingsSection } from '@/components/global/settings-section'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -57,7 +59,7 @@ export function AiProvidersSettings() {
   const utils = trpc.useUtils()
 
   const list = trpc.aiProviders.list.useQuery({ organizationId: orgId }, { enabled: organizationId !== undefined })
-  const voice = trpc.aiProviders.getVoice.useQuery({ organizationId: orgId }, { enabled: organizationId !== undefined })
+  const voiceProfiles = trpc.aiProviders.listVoiceProfiles.useQuery({ organizationId: orgId }, { enabled: organizationId !== undefined })
   const deleteProvider = trpc.aiProviders.delete.useMutation()
   const deleteModel = trpc.aiProviders.deleteModel.useMutation()
 
@@ -84,7 +86,10 @@ export function AiProvidersSettings() {
       } else {
         await deleteModel.mutateAsync({ organizationId: orgId, id: pendingDelete.id })
       }
-      await utils.aiProviders.list.invalidate({ organizationId: orgId })
+      await Promise.all([
+        utils.aiProviders.list.invalidate({ organizationId: orgId }),
+        utils.aiProviders.listVoices.invalidate({ organizationId: orgId }),
+      ])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not delete.')
     } finally {
@@ -103,10 +108,18 @@ export function AiProvidersSettings() {
 
   const providers = list.data?.providers ?? []
   const routes = list.data?.routes ?? []
-  /* The provider model id behind the Narration route picks the voice choices. */
-  const narrationRoute = routes.find((r) => r.capability === 'TTS')
-  const narrationModelId =
-    providers.flatMap((p) => p.models).find((m) => m.id === narrationRoute?.modelId)?.modelId ?? null
+  /* Enabled voice models for the voice picker, tagged with their Narration role. */
+  const narrationRoute = routes.find((r) => r.capability === AiCapability.TTS)
+  const voiceModels: NarrationModelChoice[] = providers.flatMap((p) =>
+    p.models
+      .filter((m) => p.isEnabled && m.isEnabled && m.capabilities.includes(AiCapability.TTS))
+      .map((m) => ({
+        id: m.id,
+        displayName: m.displayName,
+        providerName: p.name,
+        role: m.id === narrationRoute?.modelId ? 'primary' : m.id === narrationRoute?.fallbackModelId ? 'fallback' : null,
+      }))
+  )
 
   return (
     <div className="space-y-10">
@@ -255,21 +268,20 @@ export function AiProvidersSettings() {
         </SettingsSection>
       ) : null}
 
-      {providers.length > 0 && voice.data ? (
+      {providers.length > 0 && voiceProfiles.data ? (
         <SettingsSection
           title="Narration voice"
           description="How your course videos sound"
           label="Voice"
-          labelDescription="Uses the model routed for Narration"
+          labelDescription="Each voice model keeps its own voice"
           contentWidth="full"
         >
-          {/* Not keyed on the values: saving refreshes the query, and a remount
-              would wipe the form's own success message. */}
           <NarrationVoiceForm
             organizationId={orgId}
-            initial={{ voice: voice.data.voice, speed: voice.data.speed, instructions: voice.data.instructions }}
+            models={voiceModels}
+            fallbackModelId={narrationRoute?.fallbackModelId ?? null}
+            profiles={voiceProfiles.data}
             canEdit={canUpdate}
-            narrationModelId={narrationModelId}
           />
         </SettingsSection>
       ) : null}

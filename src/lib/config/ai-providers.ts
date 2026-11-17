@@ -4,8 +4,8 @@
  *   ROUTING_PRESET_LABELS
  *
  * WHAT:  Display metadata and default base URLs for every ProviderKind, the
- *        model ids we suggest when connecting one, and human labels for
- *        capabilities and routing presets.
+ *        model ids we suggest when connecting one, human labels for
+ *        capabilities and routing presets, and the TTS voice catalog.
  * WHY:   Connecting a provider should be "pick Qwen, paste key" — the base URL
  *        and a sensible starter model list come from here. Suggestions carry
  *        NO prices on purpose: provider pricing changes often and a wrong
@@ -17,7 +17,13 @@
  */
 
 import type { AiCapability, ProviderKind } from '@/generated/prisma'
-import type { RoutingPreset } from '@/lib/types'
+import {
+  VOICE_SPEED_LIMITS,
+  type RoutingPreset,
+  type SavedNarrationVoice,
+  type VoiceControls,
+  type VoiceOption,
+} from '@/lib/types'
 
 export interface SuggestedAiModel {
   modelId: string
@@ -34,6 +40,8 @@ export interface AiProviderPreset {
   alternateBaseUrls: readonly string[]
   apiKeyRequired: boolean
   pricingUrl: string | null
+  /** Capabilities this provider's models can serve; null = any. */
+  allowedCapabilities: readonly AiCapability[] | null
   suggestedModels: readonly SuggestedAiModel[]
 }
 
@@ -46,6 +54,7 @@ export const AI_PROVIDER_PRESETS: Record<ProviderKind, AiProviderPreset> = {
     alternateBaseUrls: ['https://dashscope.aliyuncs.com/compatible-mode/v1'],
     apiKeyRequired: true,
     pricingUrl: 'https://www.alibabacloud.com/help/en/model-studio/models',
+    allowedCapabilities: null,
     suggestedModels: [
       /* qwen-plus first: it is the model the planning agents are proven on.
        * The legacy qwen-max returned nested curriculum fields as null or
@@ -68,6 +77,7 @@ export const AI_PROVIDER_PRESETS: Record<ProviderKind, AiProviderPreset> = {
     alternateBaseUrls: [],
     apiKeyRequired: true,
     pricingUrl: 'https://api-docs.deepseek.com/quick_start/pricing',
+    allowedCapabilities: null,
     suggestedModels: [
       { modelId: 'deepseek-chat', displayName: 'DeepSeek Chat', capabilities: ['FAST_TEXT', 'CODING', 'STRONG_REASONING'], supportsJsonSchema: false },
       { modelId: 'deepseek-reasoner', displayName: 'DeepSeek Reasoner', capabilities: ['STRONG_REASONING'], supportsJsonSchema: false },
@@ -80,6 +90,7 @@ export const AI_PROVIDER_PRESETS: Record<ProviderKind, AiProviderPreset> = {
     alternateBaseUrls: [],
     apiKeyRequired: true,
     pricingUrl: 'https://openai.com/api/pricing',
+    allowedCapabilities: null,
     suggestedModels: [
       { modelId: 'gpt-4o-mini-tts', displayName: 'GPT-4o mini TTS', capabilities: ['TTS'], supportsJsonSchema: false },
       { modelId: 'tts-1-hd', displayName: 'TTS-1 HD', capabilities: ['TTS'], supportsJsonSchema: false },
@@ -93,6 +104,7 @@ export const AI_PROVIDER_PRESETS: Record<ProviderKind, AiProviderPreset> = {
     alternateBaseUrls: [],
     apiKeyRequired: true,
     pricingUrl: 'https://openrouter.ai/models',
+    allowedCapabilities: null,
     suggestedModels: [],
   },
   LOCAL: {
@@ -102,7 +114,22 @@ export const AI_PROVIDER_PRESETS: Record<ProviderKind, AiProviderPreset> = {
     alternateBaseUrls: ['http://localhost:1234/v1'],
     apiKeyRequired: false,
     pricingUrl: null,
+    allowedCapabilities: null,
     suggestedModels: [],
+  },
+  ELEVENLABS: {
+    label: 'ElevenLabs (voices)',
+    description: 'Narration voices, including the ones you cloned or designed in ElevenLabs.',
+    defaultBaseUrl: 'https://api.elevenlabs.io/v1',
+    alternateBaseUrls: ['https://api.eu.residency.elevenlabs.io/v1'],
+    apiKeyRequired: true,
+    pricingUrl: 'https://elevenlabs.io/pricing/api',
+    allowedCapabilities: ['TTS'],
+    suggestedModels: [
+      { modelId: 'eleven_multilingual_v2', displayName: 'Eleven Multilingual v2', capabilities: ['TTS'], supportsJsonSchema: false },
+      { modelId: 'eleven_flash_v2_5', displayName: 'Eleven Flash v2.5', capabilities: ['TTS'], supportsJsonSchema: false },
+      { modelId: 'eleven_turbo_v2_5', displayName: 'Eleven Turbo v2.5', capabilities: ['TTS'], supportsJsonSchema: false },
+    ],
   },
   CUSTOM: {
     label: 'Custom (OpenAI-compatible)',
@@ -111,6 +138,7 @@ export const AI_PROVIDER_PRESETS: Record<ProviderKind, AiProviderPreset> = {
     alternateBaseUrls: [],
     apiKeyRequired: true,
     pricingUrl: null,
+    allowedCapabilities: null,
     suggestedModels: [],
   },
 }
@@ -152,51 +180,114 @@ export const AI_CAPABILITY_LABELS: Record<AiCapability, { label: string; descrip
 }
 
 /**
- * SOURCE OF TRUTH KEYWORDS: VOICE_SUGGESTIONS, voiceSuggestionsFor,
- *   VOICE_CATALOG, narration voice ids, CosyVoice, Kokoro, Qwen TTS
+ * SOURCE OF TRUTH KEYWORDS: VOICE_CATALOG, voiceCatalogFor, VoiceCatalogEntry,
+ *   narration voice ids, default voice, voice controls, CosyVoice, Kokoro,
+ *   Qwen TTS, ElevenLabs, OpenAI voices
  *
- * WHAT:  One-click voice choices for the model routed to Narration. Each
- *        catalog entry matches a TTS model id and lists the voice ids that
- *        model accepts; unknown models get the OpenAI names. Any id the
- *        provider supports can still be typed.
+ * WHAT:  What each TTS model family accepts: its built-in voice ids, the
+ *        voice used when nothing was picked for it, and the controls it
+ *        honours (speed range, style instructions). Providers that can list
+ *        their own voices add to these at runtime (src/lib/ai/voices.ts).
  * WHY:   Voice ids are model specific (OpenAI "echo", Kokoro "af_heart",
- *        SiliconFlow "FunAudioLLM/CosyVoice2-0.5B:anna"). Offering another
- *        model's names only produces "Invalid voice" errors. Supporting a new
- *        TTS model is one entry here.
- * WHERE: NarrationVoiceForm.
+ *        SiliconFlow "FunAudioLLM/CosyVoice2-0.5B:anna", ElevenLabs voice
+ *        ids). Offering another model's names only produces "Invalid voice"
+ *        errors, and showing a speed control the model ignores misleads.
+ *        Supporting a new TTS family is one entry here; the last entry is
+ *        the catch-all for OpenAI-style models.
+ * WHERE: src/lib/ai/voices.ts (voice lists), resolveVoiceForModel and
+ *        synthesizeSpeech (fallback voice, controls), NarrationVoiceForm.
  */
-export const VOICE_SUGGESTIONS = ['alloy', 'ash', 'coral', 'echo', 'fable', 'nova', 'onyx', 'sage', 'shimmer'] as const
-
 interface VoiceCatalogEntry {
-  matches: (modelId: string) => boolean
-  voices: (modelId: string) => ReadonlyArray<{ id: string; label: string }>
+  matches: (kind: ProviderKind, modelId: string) => boolean
+  voices: (modelId: string) => VoiceOption[]
+  defaultVoice: (modelId: string) => string
+  controls: (modelId: string) => VoiceControls
 }
+
+const plainVoices = (ids: readonly string[], label: (id: string) => string = (id) => id): VoiceOption[] =>
+  ids.map((id) => ({ id, label: label(id), description: null }))
 
 const COSYVOICE_VOICES = ['alex', 'benjamin', 'charles', 'david', 'anna', 'bella', 'claire', 'diana'] as const
 /* Qwen TTS (Alibaba Model Studio) system voices. */
 const QWEN_TTS_VOICES = ['Cherry', 'Ethan', 'Serena', 'Chelsie', 'Jennifer', 'Ryan', 'Katerina', 'Elias'] as const
 const KOKORO_VOICES = ['af_heart', 'af_bella', 'af_nicole', 'af_sarah', 'am_adam', 'am_michael', 'bf_emma', 'bm_george'] as const
+const OPENAI_VOICES = ['alloy', 'ash', 'coral', 'echo', 'fable', 'nova', 'onyx', 'sage', 'shimmer'] as const
+/* "George", one of ElevenLabs' premade voices every account can use. */
+const ELEVENLABS_DEFAULT_VOICE = 'JBFqnCBsd6RMkjVDRZzb'
+
+const FULL_SPEED = { min: VOICE_SPEED_LIMITS.min, max: VOICE_SPEED_LIMITS.max } as const
 
 const VOICE_CATALOG: readonly VoiceCatalogEntry[] = [
   {
+    /* Voices are listed live from the account (cloned and designed ones too). */
+    matches: (kind) => kind === 'ELEVENLABS',
+    voices: () => [],
+    defaultVoice: () => ELEVENLABS_DEFAULT_VOICE,
+    controls: () => ({ speed: { min: VOICE_SPEED_LIMITS.min, max: 1.2 }, style: false }),
+  },
+  {
     /* SiliconFlow CosyVoice: system voices are "<model>:<name>". */
-    matches: (modelId) => /cosyvoice/i.test(modelId),
-    voices: (modelId) => COSYVOICE_VOICES.map((name) => ({ id: `${modelId}:${name}`, label: name })),
+    matches: (_kind, modelId) => /cosyvoice/i.test(modelId),
+    voices: (modelId) => COSYVOICE_VOICES.map((name) => ({ id: `${modelId}:${name}`, label: name, description: null })),
+    defaultVoice: (modelId) => `${modelId}:${COSYVOICE_VOICES[0]}`,
+    controls: () => ({ speed: FULL_SPEED, style: false }),
   },
   {
-    matches: (modelId) => /^qwen.*tts/i.test(modelId),
-    voices: () => QWEN_TTS_VOICES.map((id) => ({ id, label: id })),
+    /* Alibaba's native speech API takes neither speed nor style. */
+    matches: (_kind, modelId) => /^qwen.*tts/i.test(modelId),
+    voices: () => plainVoices(QWEN_TTS_VOICES),
+    defaultVoice: () => QWEN_TTS_VOICES[0],
+    controls: () => ({ speed: null, style: false }),
   },
   {
-    matches: (modelId) => /kokoro/i.test(modelId),
-    voices: () => KOKORO_VOICES.map((id) => ({ id, label: id.slice(3) })),
+    matches: (_kind, modelId) => /kokoro/i.test(modelId),
+    voices: () => plainVoices(KOKORO_VOICES, (id) => id.slice(3)),
+    defaultVoice: () => KOKORO_VOICES[0],
+    controls: () => ({ speed: FULL_SPEED, style: false }),
+  },
+  {
+    /* OpenAI and OpenAI-style models; only the older tts-1 family drops style. */
+    matches: () => true,
+    voices: () => plainVoices(OPENAI_VOICES),
+    defaultVoice: () => OPENAI_VOICES[0],
+    controls: (modelId) => ({ speed: FULL_SPEED, style: !/^tts-1/i.test(modelId) }),
   },
 ]
 
-export function voiceSuggestionsFor(modelId: string | null): ReadonlyArray<{ id: string; label: string }> {
-  const entry = modelId ? VOICE_CATALOG.find((e) => e.matches(modelId)) : undefined
-  return entry && modelId ? entry.voices(modelId) : VOICE_SUGGESTIONS.map((id) => ({ id, label: id }))
+/**
+ * SOURCE OF TRUTH KEYWORDS: voiceCatalogFor
+ *
+ * WHAT:  The catalog entry for one TTS model, resolved to plain data.
+ */
+export function voiceCatalogFor(
+  kind: ProviderKind,
+  modelId: string
+): { voices: VoiceOption[]; defaultVoice: string; controls: VoiceControls } {
+  const entry = VOICE_CATALOG.find((e) => e.matches(kind, modelId)) ?? VOICE_CATALOG[VOICE_CATALOG.length - 1]
+  if (!entry) return { voices: [], defaultVoice: OPENAI_VOICES[0], controls: { speed: FULL_SPEED, style: true } }
+  return { voices: entry.voices(modelId), defaultVoice: entry.defaultVoice(modelId), controls: entry.controls(modelId) }
 }
+
+/**
+ * SOURCE OF TRUTH KEYWORDS: resolveVoiceForModel, fallback voice, voice per
+ *   model, SavedNarrationVoice, aiModelId, VoiceProfile lookup
+ *
+ * WHAT:  The voice, speed and style one TTS model speaks with: its own saved
+ *        profile, else a profile saved before voices were per model, else the
+ *        model's catalog default voice with the default speed and style.
+ * WHY:   Voice ids only work on their own model. Rerouting Narration or
+ *        falling back to another provider must not send it a foreign id.
+ * WHERE: synthesizeSpeech (gateway), NarrationVoiceForm (form defaults).
+ */
+export function resolveVoiceForModel(
+  model: { id: string; modelId: string; kind: ProviderKind },
+  profiles: readonly SavedNarrationVoice[]
+): Omit<SavedNarrationVoice, 'aiModelId'> {
+  const own = profiles.find((p) => p.aiModelId === model.id) ?? profiles.find((p) => p.aiModelId === null)
+  if (own) return { voice: own.voice, speed: own.speed, instructions: own.instructions }
+  return { voice: voiceCatalogFor(model.kind, model.modelId).defaultVoice, speed: DEFAULT_VOICE.speed, instructions: DEFAULT_VOICE.instructions }
+}
+
 export const DEFAULT_VOICE = { voice: 'alloy', speed: 1, instructions: 'Warm, clear and friendly online instructor.' } as const
 
 /**

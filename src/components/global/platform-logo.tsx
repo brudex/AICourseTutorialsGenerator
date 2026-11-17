@@ -6,10 +6,13 @@
  * Web Prodigies LLC. See the LICENSE file in the root of this repository.
  */
 
+'use client'
+
 /**
  * SOURCE OF TRUTH KEYWORDS: PlatformLogo, PlatformLogoProps, app icon logo
  *
- * WHAT:  The app's brand mark: the app icon (APP_LOGO) and APP_NAME.
+ * WHAT:  The app's brand mark: the app icon (APP_LOGO) and the app name from
+ *        portal settings (useBranding).
  * WHY:   One reusable logo for the auth screens, onboarding and anything else
  *        that shows the product brand. The icon file is the single source, so
  *        rebranding means replacing public/brand/logo.png. `size` scales the
@@ -21,7 +24,8 @@ import type { Route } from 'next'
 import Image from 'next/image'
 import Link from 'next/link'
 
-import { APP_LOGO, APP_NAME } from '@/lib/config/branding'
+import { APP_LOGO } from '@/lib/config/branding'
+import { useBranding } from '@/components/global/branding'
 import { cn } from '@/lib/utils'
 
 export interface PlatformLogoProps {
@@ -32,11 +36,12 @@ export interface PlatformLogoProps {
 }
 
 export function PlatformLogo({ href = '/', className, showName = true, size = 'sm' }: PlatformLogoProps) {
+  const { appName } = useBranding()
   const large = size === 'lg'
   const content = (
     <div className={cn('flex items-center font-semibold tracking-tight', large ? 'gap-3 text-xl' : 'gap-2', className)}>
       <Image src={APP_LOGO} alt="" width={large ? 48 : 28} height={large ? 48 : 28} priority className="shrink-0" />
-      {showName ? <span>{APP_NAME}</span> : null}
+      {showName ? <span>{appName}</span> : null}
     </div>
   )
 

@@ -30,9 +30,10 @@
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import type { Metadata } from 'next'
+import { connection } from 'next/server'
 import { Geist, Geist_Mono } from 'next/font/google'
 import './globals.css'
-import { BRANDING } from '@/lib/config'
+import { BRANDING, appDescription, appName } from '@/lib/config'
 import {
   hasMissingRequiredEnv,
   getEnvChecklist,
@@ -42,6 +43,7 @@ import { TRPCReactProvider } from '@/trpc/react-provider'
 import { AuthBoundary } from '@/components/global/providers/server'
 import { ThemeProvider } from '@/components/theme-provider'
 import { SetupChecklist } from '@/components/global/setup-checklist'
+import { BrandingProvider } from '@/components/global/branding'
 import { Toaster } from '@/components/ui/sonner'
 import { cn } from '@/lib/utils'
 
@@ -59,24 +61,24 @@ const geistMono = Geist_Mono({
   subsets: ['latin'],
 })
 
-export const metadata: Metadata = {
-  metadataBase: BRANDING.metadataBase,
-  title: {
-    default: BRANDING.appName,
-    template: `%s | ${BRANDING.appName}`,
-  },
-  description: BRANDING.appDescription,
+/* Name and description are portal settings: read per request (connection()
+ * opts out of build time prerendering) so a rename applies without a rebuild. */
+export async function generateMetadata(): Promise<Metadata> {
+  await connection()
+  const name = appName()
+  return {
+    metadataBase: BRANDING.metadataBase,
+    title: { default: name, template: `%s | ${name}` },
+    description: appDescription(),
+  }
 }
 
-/* The setup gate reads secrets that exist only at runtime. Prerendering this
- * layout during `next build` freezes the "missing" checklist into the image. */
-export const dynamic = 'force-dynamic'
-
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
+  await connection()
   return (
     <html
       lang="en"
@@ -96,17 +98,19 @@ export default function RootLayout({
           {hasMissingRequiredEnv() ? (
             <SetupChecklist items={getEnvChecklist()} optional={getOptionalEnvChecklist()} envFileFound={existsSync(path.join(process.cwd(), '.env'))} />
           ) : (
-            <AuthBoundary>
-              <TRPCReactProvider>
-                {/* GLOBAL_UPGRADE_SURFACE: one upgrade modal for the whole app.
-                    It sits INSIDE the tRPC provider because it opens itself off
-                    the query/mutation caches whenever the server refuses a call
-                    for plan reasons — see UpgradeModalProvider. Mounting it here
-                    rather than per feature is what makes every gate, current and
-                    future, land on the same screen. */}
-                {children}
-              </TRPCReactProvider>
-            </AuthBoundary>
+            <BrandingProvider value={{ appName: appName() }}>
+              <AuthBoundary>
+                <TRPCReactProvider>
+                  {/* GLOBAL_UPGRADE_SURFACE: one upgrade modal for the whole app.
+                      It sits INSIDE the tRPC provider because it opens itself off
+                      the query/mutation caches whenever the server refuses a call
+                      for plan reasons — see UpgradeModalProvider. Mounting it here
+                      rather than per feature is what makes every gate, current and
+                      future, land on the same screen. */}
+                  {children}
+                </TRPCReactProvider>
+              </AuthBoundary>
+            </BrandingProvider>
           )}
           <Toaster position="bottom-right" />
         </ThemeProvider>

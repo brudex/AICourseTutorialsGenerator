@@ -24,7 +24,7 @@ import 'server-only'
 import { z } from 'zod'
 
 import { PublishingPlatform } from '@/generated/prisma'
-import { APP_NAME } from '@/lib/config'
+import { appName } from '@/lib/config'
 import type { Publisher, PublishRunContext } from '@/lib/types'
 import { lessonBodyHtml } from '@/lib/render/documents'
 import { publishingJson, UPLOAD_TIMEOUT_MS } from './http'
@@ -38,7 +38,7 @@ export function wordpressAuthHeader(credential: string) {
 
 /** WordPress's approval page; with a success URL it sends the password back. */
 export function buildWordPressAuthorizeUrl(baseUrl: string, successUrl: string | null, rejectUrl: string | null): string {
-  const params = new URLSearchParams({ app_name: APP_NAME, app_id: WORDPRESS_APP_ID })
+  const params = new URLSearchParams({ app_name: appName(), app_id: WORDPRESS_APP_ID })
   if (successUrl) params.set('success_url', successUrl)
   if (rejectUrl) params.set('reject_url', rejectUrl)
   return `${baseUrl}/wp-admin/authorize-application.php?${params.toString()}`

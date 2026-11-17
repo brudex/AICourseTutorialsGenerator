@@ -20,9 +20,8 @@ import 'server-only'
  */
 
 import { AiCapability, AssetKind } from '@/generated/prisma'
-import { DEFAULT_VOICE } from '@/lib/config/ai-providers'
 import { prisma } from '@/lib/config'
-import { courseBriefSchema, VOICE_SPEED_LIMITS, type AgentDefinition } from '@/lib/types'
+import { courseBriefSchema, type AgentDefinition } from '@/lib/types'
 import { DEFAULT_LEARNER_LEVEL, learnerLevelGuide } from '@/lib/config/learner-levels'
 import { synthesizeSpeech } from '@/lib/ai'
 import { buildWebVtt, type CaptionScene } from '@/lib/render/captions'
@@ -58,20 +57,19 @@ export const narratorAgent: AgentDefinition = {
     const written = await loadCurrentLessonContent(db, lessonId)
     const rows = await lessonService.listVersionScenes(db, written.versionId)
     if (rows.length === 0) throw new AgentInputError('The lesson has no video script to narrate.')
-    const [savedVoice, course] = await Promise.all([
-      voiceService.findDefaultVoice(db, job.organizationId),
+    const [profiles, course] = await Promise.all([
+      voiceService.listVoiceProfiles(db, job.organizationId),
       courseService.findCourse(db, job.organizationId, job.courseId),
     ])
-    const voice = savedVoice ?? DEFAULT_VOICE
-    /* The workspace voice, paced and styled for the course's learner level. */
+    /* Each model's saved voice (picked by the gateway), paced and styled for the course's learner level. */
     const level = courseBriefSchema.safeParse(course?.brief).data?.audienceProfile.level ?? DEFAULT_LEARNER_LEVEL
-    const delivery = learnerLevelGuide(level).narration
-    const speed = Math.min(VOICE_SPEED_LIMITS.max, Math.max(VOICE_SPEED_LIMITS.min, Number((voice.speed * delivery.speedFactor).toFixed(2))))
-    const instructions = [voice.instructions, delivery.delivery].filter(Boolean).join(' ')
+    const { speedFactor, delivery: style } = learnerLevelGuide(level).narration
 
     const storage = getStorage()
     const keyBase = { organizationId: job.organizationId, courseId: job.courseId, lessonId }
     const voiced: VoicedScene[] = []
+    /* The voice id that actually spoke (the fallback model has its own). */
+    let spokenVoice = ''
 
     for (const row of rows) {
       const speech = await synthesizeSpeech({
@@ -84,10 +82,10 @@ export const narratorAgent: AgentDefinition = {
           taskId: task.id,
         },
         text: row.narration,
-        voice: voice.voice,
-        speed,
-        instructions,
+        profiles,
+        delivery: { speedFactor, style },
       })
+      spokenVoice = speech.voice
       const storageKey = sceneAssetKey({ ...keyBase, sceneId: row.id, variant: 'narration', extension: speech.extension })
       await storage.put({ key: storageKey, body: speech.audio, contentType: speech.mimeType })
       voiced.push({
@@ -149,6 +147,6 @@ export const narratorAgent: AgentDefinition = {
       { timeout: 30_000 }
     )
 
-    return { output: { scenes: voiced.length, durationMs: totalMs, voice: voice.voice } }
+    return { output: { scenes: voiced.length, durationMs: totalMs, voice: spokenVoice } }
   },
 }

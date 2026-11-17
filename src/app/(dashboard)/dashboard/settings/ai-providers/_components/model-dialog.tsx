@@ -89,6 +89,8 @@ function ModelForm({
   const upsert = trpc.aiProviders.upsertModel.useMutation()
   const [error, setError] = React.useState<string | null>(null)
   const suggestions = AI_PROVIDER_PRESETS[provider.kind].suggestedModels
+  /* Voice only providers (ElevenLabs) offer just the capabilities they serve. */
+  const capabilityChoices = AI_PROVIDER_PRESETS[provider.kind].allowedCapabilities ?? Object.values(AiCapability)
   /* The provider's own model list (GET /models), loaded when the dialog
    * opens so users pick real ids. Cached for 5 minutes per provider. */
   const available = trpc.aiProviders.testConnection.useQuery(
@@ -120,7 +122,7 @@ function ModelForm({
           providerId: provider.id,
           modelId: '',
           displayName: '',
-          capabilities: [AiCapability.STRONG_REASONING],
+          capabilities: [capabilityChoices.includes(AiCapability.STRONG_REASONING) ? AiCapability.STRONG_REASONING : (capabilityChoices[0] ?? AiCapability.STRONG_REASONING)],
           inputPricePerMTok: 0,
           outputPricePerMTok: 0,
           supportsJsonSchema: false,
@@ -152,7 +154,10 @@ function ModelForm({
     setError(null)
     try {
       await upsert.mutateAsync(values)
-      await utils.aiProviders.list.invalidate({ organizationId })
+      await Promise.all([
+        utils.aiProviders.list.invalidate({ organizationId }),
+        utils.aiProviders.listVoices.invalidate({ organizationId }),
+      ])
       onDone()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save this model.')
@@ -202,7 +207,7 @@ function ModelForm({
             <FormItem>
               <FormLabel>Capabilities</FormLabel>
               <div className="grid gap-2 sm:grid-cols-2">
-                {Object.values(AiCapability).map((capability) => {
+                {capabilityChoices.map((capability) => {
                   const checked = field.value.includes(capability)
                   return (
                     <label key={capability} className="flex items-start gap-2 rounded-md border p-2 text-sm">
