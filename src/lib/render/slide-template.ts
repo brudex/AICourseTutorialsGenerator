@@ -14,6 +14,9 @@ import 'server-only'
  *        is HTML-escaped (model-written content); the only raw HTML inserted
  *        is Shiki output and Mermaid's sanitised SVG. Code font size scales
  *        with line count so long samples still fit the frame.
+ *        The bottom ~170px is kept empty for captions (the player's and the
+ *        MP4's), so the lesson/course labels sit at the TOP; the accent glow
+ *        is the frame's own background, never a layer painted over the text.
  * WHERE: src/lib/render/scene-still.ts (screenshot to PNG); step 8 reuses the
  *        same layouts for video frames.
  */
@@ -39,13 +42,13 @@ function highlightCode(code: string, language: string, highlighted: ReadonlySet<
   return highlightCodeHtml(code, language, T.codeTheme, highlighted)
 }
 
-/* Largest font that fits the code panel (≈1560×700 px of usable space):
+/* Largest font that fits the code panel (≈1560×640 px of usable space):
  * monospace glyphs are ~0.6em wide and lines are 1.55em tall. */
 function codeFontSize(code: string): number {
   const lines = code.split('\n')
   const longest = Math.max(1, ...lines.map((l) => l.length + 4))
   const byWidth = 1560 / (0.6 * longest)
-  const byHeight = 700 / (1.55 * lines.length)
+  const byHeight = 640 / (1.55 * lines.length)
   return Math.round(Math.max(16, Math.min(36, byWidth, byHeight)))
 }
 
@@ -141,8 +144,7 @@ export async function renderSlideHtml(input: SlideRenderInput): Promise<string> 
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{width:${width}px;height:${height}px;overflow:hidden}
   body{background:${T.background};color:${T.text};font-family:${T.fontSans};-webkit-font-smoothing:antialiased}
-  .frame{position:relative;width:100%;height:100%;padding:110px 140px 120px;display:flex;flex-direction:column}
-  .frame::before{content:"";position:absolute;inset:0;background:radial-gradient(1200px 600px at 85% -10%, ${T.accentSoft}, transparent 60%);pointer-events:none}
+  .frame{position:relative;width:100%;height:100%;padding:130px 140px 170px;display:flex;flex-direction:column;background:radial-gradient(1200px 600px at 85% -10%, ${T.accentSoft}, transparent 60%)}
   h1{font-weight:700;letter-spacing:-0.02em;line-height:1.12}
   .center{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:28px}
   .stack{flex:1;display:flex;flex-direction:column;justify-content:center;gap:44px;min-height:0}
@@ -176,7 +178,7 @@ export async function renderSlideHtml(input: SlideRenderInput): Promise<string> 
   .options{display:grid;grid-template-columns:1fr 1fr;gap:28px}
   .option{display:flex;gap:24px;align-items:center;font-size:38px;background:${T.surface};border:2px solid ${T.border};border-radius:20px;padding:30px 36px}
   .option b{color:${T.accent}}
-  .footer{position:absolute;left:140px;right:140px;bottom:48px;display:flex;justify-content:space-between;font-size:22px;color:${T.mutedText}}
+  .footer{position:absolute;left:140px;right:140px;top:48px;display:flex;justify-content:space-between;font-size:22px;color:${T.mutedText}}
   </style></head><body><div class="frame">${await body(input)}
   <div class="footer"><span>${esc(input.lessonTitle)}</span><span>${esc(input.courseTitle)}</span></div>
   </div></body></html>`
