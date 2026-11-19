@@ -41,6 +41,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { AssetImage, SceneFrame, formatDuration, sceneStartTimes } from '@/components/global/course-content'
 import type { LessonSceneRow } from '@/lib/types'
+import { splitCues } from '@/lib/render/captions'
 
 /* Brief languages are free text ("English"); the speech API wants BCP-47. */
 const SPEECH_LANG_CODES: Record<string, string> = {
@@ -65,6 +66,21 @@ function splitSentences(text: string): string[] {
     .split(/(?<=[.!?])\s+/)
     .map((s) => s.trim())
     .filter(Boolean)
+}
+
+/* The caption cue being spoken `elapsedMs` into a scene whose speech lasts
+ * `speechMs`, timed by each cue's share of the characters (as buildWebVtt). */
+function currentCue(narration: string, elapsedMs: number, speechMs: number): string {
+  const cues = splitCues(narration)
+  if (cues.length <= 1) return cues[0] ?? ''
+  const totalChars = cues.reduce((sum, c) => sum + c.length, 0)
+  const target = (Math.min(Math.max(elapsedMs, 0), Math.max(speechMs, 1)) / Math.max(speechMs, 1)) * totalChars
+  let seen = 0
+  for (const cue of cues) {
+    seen += cue.length
+    if (target < seen) return cue
+  }
+  return cues[cues.length - 1] ?? ''
 }
 
 interface LecturePlayerProps {
@@ -215,6 +231,9 @@ export function LecturePlayer({ scenes, language, nextLectureTitle, onEnded, onN
       ? Math.min(Math.max(now - sceneStartedAt, 0) * rate, sceneDuration)
       : 0
   const elapsed = ended ? total : (starts[index] ?? 0) + sceneElapsed
+  /* One short cue at a time (as the MP4's captions are timed), never the
+   * whole scene narration: a paragraph on screen competes with the voice. */
+  const caption = currentCue(current?.scene.narration ?? '', sceneElapsed, sceneDuration - (current?.scene.pauseAfterMs ?? 0))
 
   if (!current) {
     return (
@@ -236,10 +255,10 @@ export function LecturePlayer({ scenes, language, nextLectureTitle, onEnded, onN
           </div>
         )}
 
-        {captions && started && !ended ? (
-          <div className="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center px-6">
-            <p className="max-w-3xl rounded-md bg-background/90 px-4 py-2 text-center text-sm leading-relaxed shadow-sm md:text-base">
-              {current.scene.narration}
+        {captions && started && !ended && caption ? (
+          <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center px-6 md:bottom-5">
+            <p className="max-w-3xl rounded-md bg-black px-3 py-1.5 text-center text-sm leading-snug text-white md:text-base">
+              {caption}
             </p>
           </div>
         ) : null}

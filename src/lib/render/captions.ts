@@ -11,7 +11,8 @@
  *        of a second of the voice, which is how most generated captions are
  *        timed. Pure function — no I/O — so it is trivially testable and
  *        reusable by the video renderer (step 8) for burned-in captions.
- * WHERE: Narrator agent (src/lib/agents/narrator.ts).
+ * WHERE: Narrator agent (src/lib/agents/narrator.ts); splitCues also drives
+ *        the slideshow player's on-screen captions.
  */
 
 export interface CaptionScene {
@@ -32,7 +33,8 @@ function timestamp(ms: number): string {
   return `${pad(h)}:${pad(m)}:${pad(s)}.${pad(milli, 3)}`
 }
 
-function splitCues(text: string): string[] {
+/** Narration split into caption-sized cues (sentences; long ones at commas). */
+export function splitCues(text: string): string[] {
   const sentences = text.split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter(Boolean)
   return sentences.flatMap((sentence) => {
     if (sentence.length <= MAX_CUE_CHARS) return [sentence]

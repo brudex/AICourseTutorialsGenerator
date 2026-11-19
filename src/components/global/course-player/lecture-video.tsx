@@ -58,6 +58,15 @@ export function LectureVideo({ src, captionsUrl, poster, language, nextLectureTi
             onEnded()
           }}
           onPlay={() => setEnded(false)}
+          onLoadedMetadata={(e) => {
+            /* The MP4 also carries its captions in-band (for downloads and
+             * SCORM). With our <track> present, browsers that show both draw
+             * two overlapping caption layers, so keep only one. */
+            if (!captionsUrl) return
+            const tracks = e.currentTarget.textTracks
+            const own = e.currentTarget.querySelector('track')?.track ?? null
+            for (const t of Array.from(tracks)) if (t !== own) t.mode = 'disabled'
+          }}
         >
           {captionsUrl ? (
             <track kind="captions" src={captionsUrl} srcLang={CAPTION_LANG[language.toLowerCase()] ?? 'en'} label={language} default />

@@ -84,6 +84,8 @@ export const videoDirectorAgent = defineAgent({
         'Rules:',
         '- Narration is written for the ear: conversational, second person, short sentences, no markdown, no reading code symbol-by-symbol. It explains what is on screen at that moment.',
         '- Never put a long paragraph on screen — the screen shows keywords, diagrams, and code; the voice explains.',
+        '- One idea per scene. Keep each scene’s narration to about 2–4 short sentences (roughly 20–30 seconds, never more than ~80 words); when there is more to say, start a new scene with its own visual instead of making one scene longer.',
+        '- On-screen text stays short: headings under ~8 words, bullets under ~10 words each, at most 5 bullets.',
         '- Use the lesson’s code samples for code scenes, unchanged, so on-screen code matches the downloads.',
         ...(context.canIllustrate
           ? [
@@ -101,6 +103,7 @@ export const videoDirectorAgent = defineAgent({
         ...(context.lesson.kind === 'WELCOME'
           ? [
               `This is the course WELCOME video: 6–10 scenes, about 2 minutes, friendly and direct. Use TITLE_CARD, TALKING_POINTS, DIAGRAM (the course journey section by section)${context.canIllustrate ? ', one ILLUSTRATION of the learners this course is for' : ''} and SUMMARY; no code walkthroughs, exercise prompts or quiz breaks.`,
+              'Do not cover the whole course in one scene: give each big topic or section of the course its own short scene (a few keywords on screen, 2–3 spoken sentences), so the welcome moves along briskly.',
             ]
           : []),
       ].join('\n'),
