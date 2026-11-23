@@ -46,11 +46,20 @@ const CONTENT_POLICY_PATTERN = /content[_\s-]?(policy|filter|management)|data_in
  *        A 403 that is not about the key (e.g. Alibaba "AccessDenied.Unpurchased":
  *        the account has not activated that model) keeps the provider's reason
  *        and counts as a model problem, so spare models are tried.
+ *        A 404 says what to do: the model id is wrong, or the model is not
+ *        enabled for this key, region or workspace (Alibaba "Model not exist").
+ *        A 401/403 naming a missing permission is `permission`, not `auth`:
+ *        the key works, only that call's scope is off, so it is not rejected.
  */
 const KEY_PROBLEM_PATTERN = /api[\s_-]?key|unauthori[sz]ed|authenticat|invalid[\s_-]?(token|key|credential)/i
+/* A valid key with a scope switched off, e.g. ElevenLabs "missing the permission voices_read". */
+const MISSING_PERMISSION_PATTERN = /missing[\s_-]+(the\s+)?permission/i
 
 export function aiErrorFromStatus(status: number | null, message: string): AiGatewayError {
   const detail = message.slice(0, 300)
+  if ((status === 401 || status === 403) && MISSING_PERMISSION_PATTERN.test(detail)) {
+    return new AiGatewayError('permission', `This API key is valid but restricted: ${detail}`, status)
+  }
   if (status === 403 && detail && !KEY_PROBLEM_PATTERN.test(detail)) {
     return new AiGatewayError('bad_request', `The provider refused access to this model: ${detail}`, status)
   }
@@ -58,7 +67,11 @@ export function aiErrorFromStatus(status: number | null, message: string): AiGat
     return new AiGatewayError('auth', 'The provider rejected the API key.', status)
   }
   if (status === 404) {
-    return new AiGatewayError('not_found', `Not found at this provider: ${detail}`, status)
+    return new AiGatewayError(
+      'not_found',
+      `The provider does not offer this model for your key${detail ? ` (${detail.replace(/\.$/, '')})` : ''}. Check the model id, or enable the model for this account, region or workspace in the provider's console.`,
+      status
+    )
   }
   if (status === 429) {
     return new AiGatewayError('rate_limit', 'Rate limited by the provider. Retrying later usually works.', status)

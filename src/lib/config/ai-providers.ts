@@ -21,6 +21,7 @@ import {
   VOICE_SPEED_LIMITS,
   type RoutingPreset,
   type SavedNarrationVoice,
+  type VoiceCatalogSource,
   type VoiceControls,
   type VoiceOption,
 } from '@/lib/types'
@@ -212,16 +213,28 @@ const COSYVOICE_VOICES = ['alex', 'benjamin', 'charles', 'david', 'anna', 'bella
 const QWEN_TTS_VOICES = ['Cherry', 'Ethan', 'Serena', 'Chelsie', 'Jennifer', 'Ryan', 'Katerina', 'Elias'] as const
 const KOKORO_VOICES = ['af_heart', 'af_bella', 'af_nicole', 'af_sarah', 'am_adam', 'am_michael', 'bf_emma', 'bm_george'] as const
 const OPENAI_VOICES = ['alloy', 'ash', 'coral', 'echo', 'fable', 'nova', 'onyx', 'sage', 'shimmer'] as const
-/* "George", one of ElevenLabs' premade voices every account can use. */
+/* ElevenLabs premade voices every account can use; "George" is the default.
+ * Shown when the key cannot list voices (no voices_read permission). */
+const ELEVENLABS_PREMADE_VOICES: readonly VoiceOption[] = [
+  { id: 'JBFqnCBsd6RMkjVDRZzb', label: 'George', description: 'british · male · premade' },
+  { id: '21m00Tcm4TlvDq8ikWAM', label: 'Rachel', description: 'american · female · premade' },
+  { id: 'EXAVITQu4vr4xnSDxMaL', label: 'Sarah', description: 'american · female · premade' },
+  { id: 'pNInz6obpgDQGcFmaJgB', label: 'Adam', description: 'american · male · premade' },
+  { id: 'nPczCjzI2devNBz1zQrb', label: 'Brian', description: 'american · male · premade' },
+  { id: 'Xb7hH8MSUJpSbSDYk0k2', label: 'Alice', description: 'british · female · premade' },
+  { id: 'onwK4e9ZLuTAKqWW03F9', label: 'Daniel', description: 'british · male · premade' },
+  { id: 'XrExE9yKIg1WjnnlVkGX', label: 'Matilda', description: 'american · female · premade' },
+]
 const ELEVENLABS_DEFAULT_VOICE = 'JBFqnCBsd6RMkjVDRZzb'
 
 const FULL_SPEED = { min: VOICE_SPEED_LIMITS.min, max: VOICE_SPEED_LIMITS.max } as const
 
 const VOICE_CATALOG: readonly VoiceCatalogEntry[] = [
   {
-    /* Voices are listed live from the account (cloned and designed ones too). */
+    /* Voices are listed live from the account (cloned and designed ones too);
+     * the premade ones stand in when the key may not list them. */
     matches: (kind) => kind === 'ELEVENLABS',
-    voices: () => [],
+    voices: () => [...ELEVENLABS_PREMADE_VOICES],
     defaultVoice: () => ELEVENLABS_DEFAULT_VOICE,
     controls: () => ({ speed: { min: VOICE_SPEED_LIMITS.min, max: 1.2 }, style: false }),
   },
@@ -269,23 +282,49 @@ export function voiceCatalogFor(
 }
 
 /**
+ * SOURCE OF TRUTH KEYWORDS: modelVoicesFor, model voice list, AiModel.voices,
+ *   saved voice ids, starter voices, VoiceCatalogSource, default voice per model
+ *
+ * WHAT:  The voices one TTS model speaks with, from its own saved voice ids
+ *        (AiModel.voices). The catalog is only the starter list for a model
+ *        with none saved, and only lends labels ("anna" for "<model>:anna").
+ * WHY:   Voices belong to the model the workspace set up, not to code, so a
+ *        new voice is a model edit and never a deploy.
+ * WHERE: listModelVoices (gateway), resolveVoiceForModel, ModelDialog (starter
+ *        voices for a new Narration model).
+ */
+export function modelVoicesFor(
+  kind: ProviderKind,
+  modelId: string,
+  savedIds: readonly string[]
+): { voices: VoiceOption[]; defaultVoice: string; source: Exclude<VoiceCatalogSource, 'live'> } {
+  const catalog = voiceCatalogFor(kind, modelId)
+  if (savedIds.length === 0) return { voices: catalog.voices, defaultVoice: catalog.defaultVoice, source: 'catalog' }
+  const voices = savedIds.map((id) => catalog.voices.find((v) => v.id === id) ?? { id, label: id, description: null })
+  const defaultVoice = savedIds.includes(catalog.defaultVoice) ? catalog.defaultVoice : (savedIds[0] ?? catalog.defaultVoice)
+  return { voices, defaultVoice, source: 'model' }
+}
+
+/**
  * SOURCE OF TRUTH KEYWORDS: resolveVoiceForModel, fallback voice, voice per
  *   model, SavedNarrationVoice, aiModelId, VoiceProfile lookup
  *
  * WHAT:  The voice, speed and style one TTS model speaks with: its own saved
  *        profile, else a profile saved before voices were per model, else the
- *        model's catalog default voice with the default speed and style.
+ *        model's default voice (from its own voice list) with the default
+ *        speed and style.
  * WHY:   Voice ids only work on their own model. Rerouting Narration or
  *        falling back to another provider must not send it a foreign id.
  * WHERE: synthesizeSpeech (gateway), NarrationVoiceForm (form defaults).
  */
 export function resolveVoiceForModel(
-  model: { id: string; modelId: string; kind: ProviderKind },
+  model: { id: string; modelId: string; kind: ProviderKind; voices: readonly string[] },
   profiles: readonly SavedNarrationVoice[]
 ): Omit<SavedNarrationVoice, 'aiModelId'> {
   const own = profiles.find((p) => p.aiModelId === model.id) ?? profiles.find((p) => p.aiModelId === null)
   if (own) return { voice: own.voice, speed: own.speed, instructions: own.instructions }
-  return { voice: voiceCatalogFor(model.kind, model.modelId).defaultVoice, speed: DEFAULT_VOICE.speed, instructions: DEFAULT_VOICE.instructions }
+  const { defaultVoice } = modelVoicesFor(model.kind, model.modelId, model.voices)
+  return { voice: defaultVoice, speed: DEFAULT_VOICE.speed, instructions: DEFAULT_VOICE.instructions }
 }
 
 export const DEFAULT_VOICE = { voice: 'alloy', speed: 1, instructions: 'Warm, clear and friendly online instructor.' } as const

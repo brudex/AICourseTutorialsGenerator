@@ -30,7 +30,7 @@ import 'server-only'
 import { z } from 'zod'
 
 import type { AiCapability } from '@/generated/prisma'
-import { prisma, resolveVoiceForModel, voiceCatalogFor, type DbClient } from '@/lib/config'
+import { modelVoicesFor, prisma, resolveVoiceForModel, voiceCatalogFor, type DbClient } from '@/lib/config'
 import type {
   AiCallContext,
   AiGenerateResult,
@@ -39,7 +39,9 @@ import type {
   AiUsage,
   ChatMessage,
   LiveVoiceList,
+  AiErrorKind,
   NarrationVoiceModel,
+  VoiceListNotice,
   ProviderConnectionResult,
   SavedNarrationVoice,
   SpeechDelivery,
@@ -432,7 +434,10 @@ export async function synthesizeSpeech(request: {
   const delivery = request.delivery ?? { speedFactor: 1, style: '' }
   const speak = async (model: ModelWithCredentials): Promise<AiSpeechResult> => {
     const startedAt = Date.now()
-    const profile = resolveVoiceForModel({ id: model.id, modelId: model.modelId, kind: model.provider.kind }, request.profiles)
+    const profile = resolveVoiceForModel(
+      { id: model.id, modelId: model.modelId, kind: model.provider.kind, voices: model.voices },
+      request.profiles
+    )
     const voice = profile.voice
     const { controls } = voiceCatalogFor(model.provider.kind, model.modelId)
     const paced = Number((profile.speed * delivery.speedFactor).toFixed(2))
@@ -546,9 +551,17 @@ export async function generateImage(request: {
  *
  * WHAT:  Lists a provider's model ids the way its kind requires (ElevenLabs
  *        has its own API; everyone else answers GET /models).
+ * WHY:   A key restricted from listing models (ElevenLabs without
+ *        models_read) still authenticated, so it connects with an empty list
+ *        and the model picker offers the starter models instead.
  */
-function listModelsFor(kind: ProviderKind, endpoint: ProviderEndpoint): Promise<string[]> {
-  return kind === ProviderKind.ELEVENLABS ? listElevenLabsModels(endpoint) : listProviderModels(endpoint)
+async function listModelsFor(kind: ProviderKind, endpoint: ProviderEndpoint): Promise<string[]> {
+  try {
+    return kind === ProviderKind.ELEVENLABS ? await listElevenLabsModels(endpoint) : await listProviderModels(endpoint)
+  } catch (error) {
+    if (toAiGatewayError(error).kind === 'permission') return []
+    throw error
+  }
 }
 
 /**
@@ -572,9 +585,9 @@ export async function verifyProviderCredentials(kind: ProviderKind, endpoint: Pr
  * SOURCE OF TRUTH KEYWORDS: LIVE_VOICE_SOURCES, live voice list per provider kind
  *
  * WHAT:  How each provider kind lists its own voices. `complete` lists
- *        replace the built-in catalog; partial ones (custom voices only) are
- *        added to it. Kinds missing here use the catalog alone (OpenAI and
- *        Alibaba publish no voice list).
+ *        replace the model's voice list; partial ones (custom voices only) are
+ *        added to it. Kinds missing here use the model's own saved voices
+ *        (AiModel.voices) alone (OpenAI and Alibaba publish no voice list).
  * WHY:   Supporting another provider's voice list is one entry here.
  */
 const LIVE_VOICE_SOURCES: Partial<Record<ProviderKind, (endpoint: ProviderEndpoint, modelId: string) => Promise<LiveVoiceList>>> = {
@@ -583,23 +596,48 @@ const LIVE_VOICE_SOURCES: Partial<Record<ProviderKind, (endpoint: ProviderEndpoi
   CUSTOM: listSpeechVoices,
 }
 
+/**
+ * SOURCE OF TRUTH KEYWORDS: voiceListNotice, voice list failure copy,
+ *   restricted key, voices_read, client friendly voice message
+ *
+ * WHAT:  Turns a failed voice list call into a plain note for clients.
+ * WHY:   Provider errors ("missing the permission voices_read") mean nothing
+ *        to a course creator; they need to know what they see and what to do.
+ * WHERE: narrationVoiceModel.
+ */
+function voiceListNotice(providerName: string, kind: AiErrorKind): VoiceListNotice {
+  /* "ElevenLabs (voices)" reads as "ElevenLabs" in a sentence. */
+  const provider = providerName.replace(/\s*\(.*\)\s*$/, '') || providerName
+  if (kind === 'permission') {
+    return {
+      tone: 'info',
+      message: `Showing popular ${provider} voices. To see every voice on your account, including your own, allow this API key to read voices in your ${provider} settings.`,
+    }
+  }
+  if (kind === 'auth') {
+    return { tone: 'warning', message: `${provider} did not accept the saved API key, so popular voices are shown. Update the key above.` }
+  }
+  return { tone: 'warning', message: `We could not reach ${provider} just now, so popular voices are shown. Try again in a moment.` }
+}
+
 async function narrationVoiceModel(model: ModelWithCredentials): Promise<NarrationVoiceModel> {
-  const catalog = voiceCatalogFor(model.provider.kind, model.modelId)
+  const { controls } = voiceCatalogFor(model.provider.kind, model.modelId)
+  const own = modelVoicesFor(model.provider.kind, model.modelId, model.voices)
   const listLive = LIVE_VOICE_SOURCES[model.provider.kind]
   let live: LiveVoiceList | null = null
-  let notice: string | null = null
+  let notice: VoiceListNotice | null = null
   if (listLive) {
     try {
       live = await listLive(endpointFor(model), model.modelId)
     } catch (error) {
-      notice = `Could not load voices from ${model.provider.name}: ${toAiGatewayError(error).message}`
+      notice = voiceListNotice(model.provider.name, toAiGatewayError(error).kind)
     }
   }
   const liveVoices = live?.voices ?? []
   const voices =
     live?.complete && liveVoices.length > 0
       ? liveVoices
-      : [...liveVoices, ...catalog.voices.filter((voice) => !liveVoices.some((l) => l.id === voice.id))]
+      : [...liveVoices, ...own.voices.filter((voice) => !liveVoices.some((l) => l.id === voice.id))]
   return {
     aiModelId: model.id,
     modelId: model.modelId,
@@ -607,9 +645,9 @@ async function narrationVoiceModel(model: ModelWithCredentials): Promise<Narrati
     providerName: model.provider.name,
     providerKind: model.provider.kind,
     voices,
-    defaultVoice: voices.some((voice) => voice.id === catalog.defaultVoice) ? catalog.defaultVoice : voices[0]?.id ?? catalog.defaultVoice,
-    controls: catalog.controls,
-    source: liveVoices.length > 0 ? 'live' : 'catalog',
+    defaultVoice: voices.some((voice) => voice.id === own.defaultVoice) ? own.defaultVoice : voices[0]?.id ?? own.defaultVoice,
+    controls,
+    source: liveVoices.length > 0 ? 'live' : own.source,
     notice,
   }
 }

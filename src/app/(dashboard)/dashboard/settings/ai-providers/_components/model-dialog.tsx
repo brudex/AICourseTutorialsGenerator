@@ -5,7 +5,8 @@
  *   upsertAiModelSchema, model capabilities, model pricing, ModelIdPicker
  *
  * WHAT:  Add or edit a model on a provider: id, name, capabilities, prices,
- *        JSON-schema support, context window, enabled.
+ *        JSON-schema support, context window, enabled, and for Narration
+ *        models the voice ids the model speaks with (ModelVoicesField).
  * WHY:   The model-id field suggests (a) the provider kind's starter models
  *        and (b) every id the provider lists for this key (loaded on open),
  *        in a searchable picker, so users pick real ids
@@ -22,7 +23,7 @@ import { Loader2Icon } from 'lucide-react'
 
 import { AiCapability } from '@/generated/prisma'
 import { trpc } from '@/trpc/react-provider'
-import { AI_CAPABILITY_LABELS, AI_PROVIDER_PRESETS } from '@/lib/config'
+import { AI_CAPABILITY_LABELS, AI_PROVIDER_PRESETS, modelVoicesFor } from '@/lib/config'
 import { upsertAiModelSchema, type UpsertAiModelValues } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -45,6 +46,7 @@ import {
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
 import { ModelIdPicker } from './model-id-picker'
 import type { AiModelRow, AiProviderRow } from './ai-provider-types'
 
@@ -114,6 +116,10 @@ function ModelForm({
           outputPricePerMTok: model.outputPricePerMTok,
           supportsJsonSchema: model.supportsJsonSchema,
           contextWindow: model.contextWindow,
+          /* What the model speaks with today: its saved voices, else its starter list. */
+          voices: model.capabilities.includes(AiCapability.TTS)
+            ? modelVoicesFor(provider.kind, model.modelId, model.voices).voices.map((v) => v.id)
+            : [],
           isEnabled: model.isEnabled,
         }
       : {
@@ -127,12 +133,16 @@ function ModelForm({
           outputPricePerMTok: 0,
           supportsJsonSchema: false,
           contextWindow: null,
+          voices: [],
           isEnabled: true,
         },
   })
 
   const capabilities = useWatch({ control: form.control, name: 'capabilities' })
+  const modelId = useWatch({ control: form.control, name: 'modelId' })
   const isSpeech = capabilities.includes(AiCapability.TTS)
+  /* The model family's starter voices, offered to fill an empty list. */
+  const starterVoices = modelId ? modelVoicesFor(provider.kind, modelId, []).voices.map((v) => v.id) : []
   /* Image models are priced per picture: the input price field holds it. */
   const isImage = capabilities.includes(AiCapability.IMAGE_GENERATION)
 
@@ -148,6 +158,10 @@ function ModelForm({
     form.setValue('displayName', suggestion.displayName)
     form.setValue('capabilities', [...suggestion.capabilities])
     form.setValue('supportsJsonSchema', suggestion.supportsJsonSchema)
+    /* A starter voice model comes with its family's voices, ready to edit. */
+    if (suggestion.capabilities.includes(AiCapability.TTS) && form.getValues('voices').length === 0) {
+      form.setValue('voices', modelVoicesFor(provider.kind, value, []).voices.map((v) => v.id))
+    }
   }
 
   async function onSubmit(values: UpsertAiModelValues) {
@@ -301,6 +315,23 @@ function ModelForm({
             </FormItem>
           )}
         />
+        {isSpeech ? (
+          <FormField
+            control={form.control}
+            name="voices"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Voices</FormLabel>
+                <ModelVoicesField value={field.value} onChange={field.onChange} starter={starterVoices} />
+                <FormDescription>
+                  One voice id per line, exactly as the provider names it. The first is the default.
+                  Voices the provider lists live are added automatically.
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        ) : null}
         <FormField
           control={form.control}
           name="supportsJsonSchema"
@@ -346,5 +377,54 @@ function ModelForm({
         </DialogFooter>
       </form>
     </Form>
+  )
+}
+
+/**
+ * SOURCE OF TRUTH KEYWORDS: ModelVoicesField, model voice list editor,
+ *   AiModel.voices, voice ids per line, starter voices, Narration model voices
+ *
+ * WHAT:  Edits a Narration model's voice ids as one id per line, with a button
+ *        that fills an empty list with the model family's starter voices.
+ * WHY:   Voices are workspace data on the model, so adding a provider's new
+ *        voice is a model edit. The text is kept locally while typing so a
+ *        new empty line is not swallowed; the form gets the trimmed ids.
+ * WHERE: ModelDialog, shown when the Narration capability is ticked.
+ */
+function ModelVoicesField({
+  value,
+  onChange,
+  starter,
+}: {
+  value: string[]
+  onChange: (voices: string[]) => void
+  starter: readonly string[]
+}) {
+  const [text, setText] = React.useState(value.join('\n'))
+  /* Outside changes (a starter model picked) replace what is shown. */
+  const [synced, setSynced] = React.useState(value)
+  if (value.join('\n') !== synced.join('\n')) {
+    setSynced(value)
+    setText(value.join('\n'))
+  }
+
+  function update(next: string) {
+    const voices = next.split('\n').map((line) => line.trim()).filter(Boolean)
+    setText(next)
+    setSynced(voices)
+    onChange(voices)
+  }
+
+  return (
+    <div className="space-y-2">
+      <FormControl>
+        <Textarea rows={5} value={text} onChange={(e) => update(e.target.value)} placeholder="e.g. Cherry" className="font-mono text-sm" />
+      </FormControl>
+      {value.length === 0 && starter.length > 0 ? (
+        <Button type="button" size="sm" variant="outline" onClick={() => update(starter.join('\n'))}>
+          Add starter voices
+        </Button>
+      ) : null}
+    </div>
   )
 }

@@ -184,7 +184,7 @@ export function AgentActivity({
   if (!job) return null
 
   const failedTasks = job.tasks.filter((t) => t.status === 'FAILED')
-  const configError = failedTasks.some((t) => t.errorKind === 'not_configured' || t.errorKind === 'auth')
+  const configError = failedTasks.some((t) => t.errorKind === 'not_configured' || t.errorKind === 'auth' || t.errorKind === 'permission')
 
   return (
     <Card>

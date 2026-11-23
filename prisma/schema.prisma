@@ -839,6 +839,9 @@ model AiModel {
   outputPricePerMTok Decimal        @default(0) @db.Decimal(12, 6)
   supportsJsonSchema Boolean        @default(false)
   contextWindow      Int?
+  /// Voice ids this TTS model speaks with, owned by the workspace (model
+  /// dialog, or any voice saved for it). Empty = the built-in starter list.
+  voices             String[]       @default([])
   isEnabled          Boolean        @default(true)
   createdAt          DateTime       @default(now())
   updatedAt          DateTime       @updatedAt

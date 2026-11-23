@@ -49,7 +49,7 @@ import {
   testProviderConnection,
   verifyProviderCredentials,
 } from '@/lib/ai'
-import { AI_CAPABILITY_LABELS, AI_PROVIDER_PRESETS } from '@/lib/config'
+import { AI_CAPABILITY_LABELS, AI_PROVIDER_PRESETS, modelVoicesFor } from '@/lib/config'
 import * as voiceService from '@/services/voice.service'
 import * as aiProviderService from '@/services/ai-provider.service'
 
@@ -197,6 +197,8 @@ export const aiProvidersRouter = createTRPCRouter({
         outputPricePerMTok: input.outputPricePerMTok,
         supportsJsonSchema: input.supportsJsonSchema,
         contextWindow: input.contextWindow,
+        /* Only Narration models keep voices; duplicates are dropped, order kept. */
+        voices: input.capabilities.includes(AiCapability.TTS) ? [...new Set(input.voices)] : [],
         isEnabled: input.isEnabled,
       }
       try {
@@ -282,10 +284,17 @@ export const aiProvidersRouter = createTRPCRouter({
     .input(saveVoiceProfileSchema)
     .mutation(async ({ ctx, input }) => {
       /* The voice's model must be a voice model in THIS workspace. */
-      const model = await aiProviderService.findModel(ctx.db, input.organizationId, input.aiModelId)
+      const model = await aiProviderService.findModelWithCredentials(ctx.db, input.organizationId, input.aiModelId)
       if (!model) throw new TRPCError({ code: 'NOT_FOUND', message: 'Model not found in this workspace.' })
       if (!model.capabilities.includes(AiCapability.TTS)) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'That model is not set up for Narration.' })
+      }
+      /* A typed voice id joins the model's own list, so it is offered next time. */
+      const { voices } = modelVoicesFor(model.provider.kind, model.modelId, model.voices)
+      if (!voices.some((v) => v.id === input.voice)) {
+        await aiProviderService.updateModel(ctx.db, input.organizationId, model.id, {
+          voices: [...voices.map((v) => v.id), input.voice],
+        })
       }
       return voiceService.upsertVoiceProfile(ctx.db, input.organizationId, {
         aiModelId: input.aiModelId,
