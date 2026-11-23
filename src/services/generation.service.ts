@@ -43,7 +43,7 @@ export const AGENT_TASK_SELECT = {
   createdAt: true,
   /* The latest model calls of the step, so the UI can show which model ran (summarizeTaskModels). */
   aiUsageEvents: {
-    select: { modelName: true, providerName: true, success: true, errorKind: true, createdAt: true },
+    select: { modelName: true, providerName: true, success: true, errorKind: true, errorMessage: true, createdAt: true },
     orderBy: { createdAt: 'desc' },
     take: 10,
   },

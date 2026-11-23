@@ -226,7 +226,7 @@ export interface TaskFailureDescription {
  * WHERE: summarizeTaskModels (src/lib/generation/task-models.ts),
  *        generationJobs.get, AgentActivity.
  */
-export type TaskModelCall = Pick<AiUsageEvent, 'modelName' | 'providerName' | 'success' | 'errorKind' | 'createdAt'>
+export type TaskModelCall = Pick<AiUsageEvent, 'modelName' | 'providerName' | 'success' | 'errorKind' | 'errorMessage' | 'createdAt'>
 
 export interface TaskModelUse {
   /** The provider's own model id, e.g. "qwen-plus". */
@@ -235,4 +235,6 @@ export interface TaskModelUse {
   /** Outcome of this model's latest call in the step. */
   success: boolean
   errorKind: string | null
+  /** What the provider said on the latest failed call (null on success or for calls logged before it was kept). */
+  errorMessage: string | null
 }

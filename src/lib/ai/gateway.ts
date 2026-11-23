@@ -139,6 +139,7 @@ async function recordUsage(
       latencyMs: usage.latencyMs,
       success: outcome.success,
       errorKind: outcome.success ? null : outcome.error.kind,
+      errorMessage: outcome.success ? null : outcome.error.message.slice(0, 500),
     })
   } catch (error) {
     console.error('[ai-gateway] failed to record usage event', error)
@@ -184,7 +185,12 @@ async function callOnce(
     await recordUsage(model, request, usage, { success: true })
     return { outcome, usage }
   } catch (error) {
-    const gatewayError = toAiGatewayError(error)
+    let gatewayError = toAiGatewayError(error)
+    /* Say how long we waited, so a slow model is told apart from a stuck one. */
+    if (gatewayError.kind === 'timeout') {
+      const minutes = Math.round((chatTimeoutMs(request.maxOutputTokens) / 60_000) * 10) / 10
+      gatewayError = new AiGatewayError('timeout', `The provider did not respond within ${minutes} min.`, gatewayError.status)
+    }
     await recordUsage(model, request, { ...emptyUsage(), latencyMs: Date.now() - startedAt }, {
       success: false,
       error: gatewayError,

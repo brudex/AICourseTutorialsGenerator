@@ -96,23 +96,36 @@ function taskDetail(task: GenerationTaskRow): string {
  *
  * WHAT:  "qwen-plus · Alibaba", or "qwen-max · Alibaba ✗ → qwen-plus · Alibaba ✓"
  *        when spare models ran. Failed calls are marked so the broken model
- *        stands out.
+ *        stands out, and each failed model's provider error is listed under
+ *        the trail ("deepseek-v4-pro: The provider did not respond within 3 min.").
  * WHERE: Agent rows and Failed steps in AgentActivity.
  */
 function ModelTrail({ models, emptyLabel }: { models: readonly TaskModelUse[]; emptyLabel: string | null }) {
   if (models.length === 0) return emptyLabel ? <p className="text-xs text-muted-foreground">{emptyLabel}</p> : null
+  const failed = models.filter((m) => !m.success)
   return (
-    <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
-      <span>{models.length > 1 ? 'Models:' : 'Model:'}</span>
-      {models.map((m, i) => (
-        <span key={`${m.providerName}:${m.modelName}`} className="inline-flex items-center gap-1">
-          {i > 0 ? <span aria-hidden>→</span> : null}
-          <code className={m.success ? 'font-mono text-foreground' : 'font-mono text-destructive'}>{m.modelName}</code>
-          <span>· {m.providerName}</span>
-          {m.success ? null : <XCircleIcon className="size-3 text-destructive" aria-label="failed" />}
-        </span>
-      ))}
-    </p>
+    <div className="space-y-0.5">
+      <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
+        <span>{models.length > 1 ? 'Models:' : 'Model:'}</span>
+        {models.map((m, i) => (
+          <span key={`${m.providerName}:${m.modelName}`} className="inline-flex items-center gap-1">
+            {i > 0 ? <span aria-hidden>→</span> : null}
+            <code className={m.success ? 'font-mono text-foreground' : 'font-mono text-destructive'}>{m.modelName}</code>
+            <span>· {m.providerName}</span>
+            {m.success ? null : <XCircleIcon className="size-3 text-destructive" aria-label="failed" />}
+          </span>
+        ))}
+      </p>
+      {failed.length > 0 ? (
+        <ul className="space-y-0.5 text-xs">
+          {failed.map((m) => (
+            <li key={`${m.providerName}:${m.modelName}`} className="break-words text-muted-foreground">
+              <code className="font-mono text-destructive">{m.modelName}</code>: {m.errorMessage ?? m.errorKind ?? 'failed'}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
   )
 }
 
@@ -123,7 +136,17 @@ function groupModels(tasks: readonly GenerationTaskRow[]): TaskModelUse[] {
     const key = `${model.providerName}\u0000${model.modelName}`
     const known = seen.get(key)
     /* A model that failed in any step stays marked as failed for the group. */
-    seen.set(key, known ? { ...known, success: known.success && model.success } : model)
+    seen.set(
+      key,
+      known
+        ? {
+            ...known,
+            success: known.success && model.success,
+            errorKind: model.success ? known.errorKind : model.errorKind,
+            errorMessage: model.success ? known.errorMessage : model.errorMessage,
+          }
+        : model
+    )
   }
   return [...seen.values()]
 }
