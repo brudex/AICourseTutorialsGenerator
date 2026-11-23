@@ -100,7 +100,7 @@ Each section saves on its own. A **From server file** badge means the value curr
 
 ### Docker
 
-`docker-compose.yml` applies migrations against PostgreSQL on the host, then starts the web app and the worker. Containers reach that database at `host.docker.internal`.
+`docker-compose.yml` starts the web app and the worker against PostgreSQL on the host. Each container runs `npx prisma migrate deploy` before its process starts. Containers reach that database at `host.docker.internal`.
 
 1. Create `.env.production` with the `.env` values from step 3, using your public address. `DATABASE_URL` in that file is overridden by Compose so it points at the host database.
 2. Set `POSTGRES_PASSWORD`, `NEXT_PUBLIC_APP_URL` and `NEXT_PUBLIC_APP_DOMAIN` in your shell or a `.env` file next to `docker-compose.yml`. Optional: `POSTGRES_USER` (default `studio`), `POSTGRES_DB` (default `studio`), `POSTGRES_HOST` (default `host.docker.internal`), `POSTGRES_PORT` (default `5432`). The `NEXT_PUBLIC_` values are baked into the build.

@@ -1,7 +1,7 @@
 # AI Course Studio: one image for the web app and the background worker.
-#   web:    docker run ... ai-course-studio            (next start on :3000)
+#   web:    docker run ... ai-course-studio            (migrate, then next start on :3000)
 #   worker: docker run ... ai-course-studio npm run worker
-#   migrate (once per release): docker run ... ai-course-studio npx prisma migrate deploy
+# Every start runs `npx prisma migrate deploy` before the process command.
 # NEXT_PUBLIC_* values are baked into the browser bundle at build time, so pass
 # them as build arguments (see docs/14-deployment.md). Secrets are runtime only.
 
@@ -44,9 +44,13 @@ RUN npm run build
 FROM base AS runtime
 ENV NODE_ENV=production PORT=3000
 COPY --from=build /app /app
-RUN useradd --create-home --uid 1001 studio && mkdir -p /app/.storage && chown -R studio /app/.storage
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh \
+ && useradd --create-home --uid 1001 studio \
+ && mkdir -p /app/.storage && chown -R studio /app/.storage
 USER studio
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["npm", "start"]

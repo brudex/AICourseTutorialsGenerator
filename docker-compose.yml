@@ -1,5 +1,6 @@
-# Self hosting on one server (a VPS): a one-off migration, the web app and
-# the worker. PostgreSQL runs on the host; containers reach it at
+# Self hosting on one server (a VPS): the web app and the worker. Each
+# container applies database migrations before its process starts.
+# PostgreSQL runs on the host; containers reach it at
 # host.docker.internal. Put secrets in .env.production (never committed).
 # With STORAGE_DRIVER=local, web and worker share the "storage" volume; for
 # more than one server use STORAGE_DRIVER=s3. See docs/14-deployment.md.
@@ -19,7 +20,7 @@ x-host-db: &host-db
     DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-studio}:${POSTGRES_PASSWORD}@${POSTGRES_HOST:-host.docker.internal}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-studio}?schema=public}
 
 services:
-  migrate:
+  web:
     image: ai-course-studio
     build: &build
       context: .
@@ -30,20 +31,12 @@ services:
         NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID:-}
         NEXT_PUBLIC_SUBSCRIPTIONS_ENABLED: ${NEXT_PUBLIC_SUBSCRIPTIONS_ENABLED:-false}
         NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
-    env_file: .env.production
-    <<: *host-db
-    command: ["npx", "prisma", "migrate", "deploy"]
-
-  web:
-    image: ai-course-studio
-    build: *build
     restart: unless-stopped
     init: true
     env_file: .env.production
     <<: *host-db
     ports: ["3047:3000"]
     volumes: [storage:/app/.storage]
-    depends_on: { migrate: { condition: service_completed_successfully } }
 
   worker:
     image: ai-course-studio
@@ -55,7 +48,6 @@ services:
     command: ["npm", "run", "worker"]
     volumes: [storage:/app/.storage]
     stop_grace_period: 2m
-    depends_on: { migrate: { condition: service_completed_successfully } }
 
 volumes:
   storage:
