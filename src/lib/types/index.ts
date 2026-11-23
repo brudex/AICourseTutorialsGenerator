@@ -258,6 +258,8 @@ export type {
   AgentExecutionResult,
   AgentDefinition,
   TaskFailureDescription,
+  TaskModelCall,
+  TaskModelUse,
   GenerationJobIdValues,
   ListCourseJobsValues,
   RetryAgentTaskValues,

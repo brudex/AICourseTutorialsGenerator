@@ -41,6 +41,12 @@ export const AGENT_TASK_SELECT = {
   finishedAt: true,
   costMicros: true,
   createdAt: true,
+  /* The latest model calls of the step, so the UI can show which model ran (summarizeTaskModels). */
+  aiUsageEvents: {
+    select: { modelName: true, providerName: true, success: true, errorKind: true, createdAt: true },
+    orderBy: { createdAt: 'desc' },
+    take: 10,
+  },
 } satisfies Prisma.AgentTaskSelect
 
 export const GENERATION_JOB_SELECT = {

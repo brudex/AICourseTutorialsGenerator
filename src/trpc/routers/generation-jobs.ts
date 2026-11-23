@@ -19,6 +19,7 @@ import { protectedProcedure } from '../procedures'
 import { permissions } from '@/lib/permissions'
 import { generationJobIdSchema, listCourseJobsSchema, retryAgentTaskSchema } from '@/lib/types'
 import { cancelGenerationJob, retryFailedTask } from '@/lib/generation'
+import { summarizeTaskModels } from '@/lib/generation/task-models'
 import { getAgent } from '@/lib/agents'
 import * as generationService from '@/services/generation.service'
 
@@ -28,12 +29,17 @@ export const generationJobsRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const job = await generationService.findJobWithTasks(ctx.db, input.organizationId, input.id)
       if (!job) throw new TRPCError({ code: 'NOT_FOUND', message: 'Generation job not found.' })
-      /* Agent display names come from the server-only registry. */
+      /* Agent display names come from the server-only registry; raw ledger rows become the models each step called. */
       return {
         ...job,
-        tasks: job.tasks.map((task) => {
+        tasks: job.tasks.map(({ aiUsageEvents, ...task }) => {
           const agent = getAgent(task.agentId)
-          return { ...task, agentName: agent?.name ?? task.agentId, agentDescription: agent?.description ?? null }
+          return {
+            ...task,
+            agentName: agent?.name ?? task.agentId,
+            agentDescription: agent?.description ?? null,
+            models: summarizeTaskModels(aiUsageEvents),
+          }
         }),
       }
     }),
