@@ -246,7 +246,7 @@ export function learnerLevelGuide(level: LearnerLevel): LearnerLevelGuide {
  *        ("lectures with lots of images") working too.
  * WHERE: Video Director (illustration count and visual-first rule).
  */
-export const VISUAL_TEACHING_STYLE_PATTERN = /illustrat|image|picture|visual|figure/i
+export const VISUAL_TEACHING_STYLE_PATTERN = /illustr|\bimages?\b|picture|\bvisu|\bfigures?\b/i
 export const VISUAL_STYLE_ILLUSTRATIONS = { min: 3, max: 4 } as const
 
 export function isVisualTeachingStyle(teachingStyle: string): boolean {
