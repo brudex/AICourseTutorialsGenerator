@@ -38,6 +38,8 @@ export const researchAgent = defineAgent({
   outputSchema: researchDossierContentSchema,
   schemaName: 'research_dossier',
   temperature: 0.3,
+  /* Room for reasoning models, which spend output tokens thinking; also sets a 5 minute timeout. */
+  maxOutputTokens: 12_000,
 
   loadContext: async (db, input, job) => ({
     ...(await loadCourseForAgent(db, job.organizationId, input.courseId)),

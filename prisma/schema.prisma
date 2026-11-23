@@ -1027,6 +1027,8 @@ model AiUsageEvent {
   latencyMs      Int          @default(0)
   success        Boolean
   errorKind      String?
+  /// The provider error shown to the user, e.g. "404 Model not exist". Null on success.
+  errorMessage   String?
   createdAt      DateTime     @default(now())
 
   organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)

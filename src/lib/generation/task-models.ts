@@ -19,7 +19,7 @@ export function summarizeTaskModels(calls: readonly TaskModelCall[]): TaskModelU
   for (const call of ordered) {
     const key = `${call.providerName}\u0000${call.modelName}`
     /* Re-inserting keeps first-use order while the outcome tracks the latest call. */
-    byModel.set(key, { modelName: call.modelName, providerName: call.providerName, success: call.success, errorKind: call.errorKind })
+    byModel.set(key, { modelName: call.modelName, providerName: call.providerName, success: call.success, errorKind: call.errorKind, errorMessage: call.errorMessage })
   }
   return [...byModel.values()]
 }

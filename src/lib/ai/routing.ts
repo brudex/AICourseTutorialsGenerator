@@ -85,8 +85,8 @@ export async function resolveModelsForCall(
  *
  * WHAT:  The workspace's other enabled models for a capability, excluding the
  *        ones already tried. Structured calls list json_schema models first.
- *        Unrouted text capabilities borrow Strong reasoning models, matching
- *        CAPABILITY_FALLBACK above.
+ *        Text capabilities (Fast text, Coding, Long context) then try the
+ *        Strong reasoning models, as CAPABILITY_FALLBACK does above.
  * WHY:   A workspace often connects several models but routes only one. When
  *        that one keeps failing (e.g. returning malformed structured output),
  *        the call should not fail while a capable model sits unused.
@@ -98,8 +98,12 @@ export async function resolveSpareModels(
   params: { organizationId: string; capability: AiCapability; excludeIds: readonly string[]; preferJsonSchema: boolean }
 ): Promise<ModelWithCredentials[]> {
   let models = await aiProviderService.listModelsForCapability(db, params.organizationId, params.capability)
-  if (models.length === 0 && TEXT_FALLBACK_CAPABILITIES.includes(params.capability)) {
-    models = await aiProviderService.listModelsForCapability(db, params.organizationId, AiCapability.STRONG_REASONING)
+  /* Text capabilities always end with the Strong reasoning models: when the
+   * only Fast text or Coding model is broken (e.g. a 404 "Model not exist"),
+   * the job still runs on a model that can do it. */
+  if (TEXT_FALLBACK_CAPABILITIES.includes(params.capability)) {
+    const strong = await aiProviderService.listModelsForCapability(db, params.organizationId, AiCapability.STRONG_REASONING)
+    models = [...models, ...strong.filter((model) => !models.some((own) => own.id === model.id))]
   }
   const spares = models.filter((model) => isUsable(model) && !params.excludeIds.includes(model.id))
   /* Stable sort: json_schema models first, otherwise registration order. */
