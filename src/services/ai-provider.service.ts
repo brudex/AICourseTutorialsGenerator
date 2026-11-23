@@ -105,9 +105,32 @@ export function findModelWithCredentials(db: DbClient, organizationId: string, i
   return db.aiModel.findFirst({ where: { id, organizationId }, select: MODEL_WITH_CREDENTIALS_SELECT })
 }
 
+/** One provider's registered models (Set up for me reuses what is there). */
+export function listModelsForProvider(db: DbClient, organizationId: string, providerId: string) {
+  return db.aiModel.findMany({ where: { organizationId, providerId }, orderBy: { createdAt: 'asc' }, select: AI_MODEL_SELECT })
+}
+
 export function createModel(db: DbClient, data: Prisma.AiModelUncheckedCreateInput) {
   return db.aiModel.create({ data, select: AI_MODEL_SELECT })
 }
+
+/**
+ * SOURCE OF TRUTH KEYWORDS: createModelsIfMissing, skipDuplicates, idempotent
+ *   model create, auto setup race, providerId modelId unique
+ *
+ * WHAT:  Adds models a provider does not have yet; ids it already has are
+ *        skipped (INSERT … ON CONFLICT DO NOTHING). Returns how many were added.
+ * WHY:   "Set up for me" can run twice at once (save with auto setup, then
+ *        the button). A plain create would hit the providerId+modelId unique
+ *        rule and abort the whole transaction; skipping keeps it idempotent.
+ * WHERE: aiProviders.autoSetup.
+ */
+export async function createModelsIfMissing(db: DbClient, data: Prisma.AiModelCreateManyInput[]): Promise<number> {
+  if (data.length === 0) return 0
+  const { count } = await db.aiModel.createMany({ data, skipDuplicates: true })
+  return count
+}
+
 
 export function updateModel(
   db: DbClient,

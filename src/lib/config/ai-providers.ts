@@ -31,6 +31,8 @@ export interface SuggestedAiModel {
   displayName: string
   capabilities: AiCapability[]
   supportsJsonSchema: boolean
+  /** false: offered in the model picker but never chosen by "Set up for me". */
+  autoSetup?: boolean
 }
 
 export interface AiProviderPreset {
@@ -62,7 +64,7 @@ export const AI_PROVIDER_PRESETS: Record<ProviderKind, AiProviderPreset> = {
        * strings even with json_schema (desktop run, 2026-11-13), so it is
        * no longer suggested for strong reasoning. */
       { modelId: 'qwen-plus', displayName: 'Qwen Plus', capabilities: ['STRONG_REASONING', 'FAST_TEXT', 'LONG_CONTEXT'], supportsJsonSchema: true },
-      { modelId: 'qwen-max', displayName: 'Qwen Max (legacy)', capabilities: ['LONG_CONTEXT'], supportsJsonSchema: false },
+      { modelId: 'qwen-max', displayName: 'Qwen Max (legacy)', capabilities: ['LONG_CONTEXT'], supportsJsonSchema: false, autoSetup: false },
       { modelId: 'qwen-flash', displayName: 'Qwen Flash', capabilities: ['FAST_TEXT'], supportsJsonSchema: true },
       { modelId: 'qwen3-coder-plus', displayName: 'Qwen3 Coder Plus', capabilities: ['CODING'], supportsJsonSchema: true },
       { modelId: 'qwen3-tts-flash', displayName: 'Qwen3 TTS Flash (voice)', capabilities: ['TTS'], supportsJsonSchema: false },
@@ -93,6 +95,8 @@ export const AI_PROVIDER_PRESETS: Record<ProviderKind, AiProviderPreset> = {
     pricingUrl: 'https://openai.com/api/pricing',
     allowedCapabilities: null,
     suggestedModels: [
+      { modelId: 'gpt-4.1', displayName: 'GPT-4.1', capabilities: ['STRONG_REASONING', 'CODING', 'LONG_CONTEXT', 'VISION'], supportsJsonSchema: true },
+      { modelId: 'gpt-4.1-mini', displayName: 'GPT-4.1 mini', capabilities: ['FAST_TEXT'], supportsJsonSchema: true },
       { modelId: 'gpt-4o-mini-tts', displayName: 'GPT-4o mini TTS', capabilities: ['TTS'], supportsJsonSchema: false },
       { modelId: 'tts-1-hd', displayName: 'TTS-1 HD', capabilities: ['TTS'], supportsJsonSchema: false },
       { modelId: 'gpt-image-1', displayName: 'GPT Image 1 (illustrations)', capabilities: ['IMAGE_GENERATION'], supportsJsonSchema: false },
@@ -142,6 +146,57 @@ export const AI_PROVIDER_PRESETS: Record<ProviderKind, AiProviderPreset> = {
     allowedCapabilities: null,
     suggestedModels: [],
   },
+}
+
+/**
+ * SOURCE OF TRUTH KEYWORDS: planAutoSetup, AutoSetupPlan, set up for me,
+ *   recommended models, automatic routing, one click AI setup
+ *
+ * WHAT:  For one provider: which recommended models to add (with the exact
+ *        id the key offers) and which model each capability should use.
+ * WHY:   People who are not technical connect a provider and press one
+ *        button. A suggestion is used when the key lists it, or a dated
+ *        variant of it (qwen-vl-ocr becomes qwen-vl-ocr-2025-11-20). Speech
+ *        and image models are kept even when unlisted, because providers
+ *        often leave them out of GET /models; with no list at all, every
+ *        suggestion is used. Each capability goes to the first suggestion
+ *        whose main role (first capability) it is, else the first that
+ *        serves it; only models that win a capability are added.
+ * WHERE: aiProviders.autoSetup.
+ */
+const UNLISTED_OK: readonly AiCapability[] = ['TTS', 'IMAGE_GENERATION']
+
+export interface AutoSetupPlan {
+  models: SuggestedAiModel[]
+  /** Capability → the provider model id that should serve it. */
+  routes: Partial<Record<AiCapability, string>>
+}
+
+export function planAutoSetup(kind: ProviderKind, availableModelIds: readonly string[]): AutoSetupPlan {
+  const available = new Set(availableModelIds)
+  const resolve = (suggestion: SuggestedAiModel): string | null => {
+    if (available.size === 0 || available.has(suggestion.modelId)) return suggestion.modelId
+    const dated = availableModelIds.filter((id) => id.startsWith(`${suggestion.modelId}-`)).sort().at(-1)
+    if (dated) return dated
+    return suggestion.capabilities.some((c) => UNLISTED_OK.includes(c)) ? suggestion.modelId : null
+  }
+  const usable = AI_PROVIDER_PRESETS[kind].suggestedModels.flatMap((suggestion) => {
+    if (suggestion.autoSetup === false) return []
+    const modelId = resolve(suggestion)
+    return modelId ? [{ ...suggestion, modelId, capabilities: [...suggestion.capabilities] }] : []
+  })
+  /* A model's first capability is its main role (qwen-flash: Fast text), so
+   * main roles win first; any model that also serves a capability fills gaps. */
+  const routes: Partial<Record<AiCapability, string>> = {}
+  for (const model of usable) {
+    const main = model.capabilities.at(0)
+    if (main) routes[main] ??= model.modelId
+  }
+  for (const model of usable) {
+    for (const capability of model.capabilities) routes[capability] ??= model.modelId
+  }
+  const routed = new Set(Object.values(routes))
+  return { models: usable.filter((model) => routed.has(model.modelId)), routes }
 }
 
 /**

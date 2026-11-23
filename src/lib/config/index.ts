@@ -84,11 +84,12 @@ export {
   AI_CAPABILITY_LABELS,
   ROUTING_PRESET_LABELS,
   voiceCatalogFor,
+  planAutoSetup,
   modelVoicesFor,
   resolveVoiceForModel,
   DEFAULT_VOICE,
 } from './ai-providers'
-export type { AiProviderPreset, SuggestedAiModel } from './ai-providers'
+export type { AiProviderPreset, SuggestedAiModel, AutoSetupPlan } from './ai-providers'
 export {
   COURSE_MATERIALS,
   MATERIAL_BUILD_ORDER,
