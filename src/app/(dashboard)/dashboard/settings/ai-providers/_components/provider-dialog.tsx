@@ -25,7 +25,7 @@ import { Loader2Icon } from 'lucide-react'
 
 import { ProviderKind } from '@/generated/prisma'
 import { trpc } from '@/trpc/react-provider'
-import { AI_PROVIDER_PRESETS } from '@/lib/config'
+import { AI_PROVIDER_PRESETS, canAutoSetup } from '@/lib/config'
 import {
   createAiProviderSchema,
   updateAiProviderSchema,
@@ -57,7 +57,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch'
 import { Checkbox } from '@/components/ui/checkbox'
 import type { AiProviderRow } from './ai-provider-types'
-import { canAutoSetup, useAutoSetup } from './auto-setup-button'
+import { useAutoSetup } from './auto-setup-button'
 
 interface ProviderDialogProps {
   organizationId: string

@@ -20,15 +20,9 @@ import * as React from 'react'
 import { Loader2Icon, SparklesIcon } from 'lucide-react'
 import { toast } from 'sonner'
 
-import type { ProviderKind } from '@/generated/prisma'
 import { trpc } from '@/trpc/react-provider'
-import { AI_CAPABILITY_LABELS, planAutoSetup } from '@/lib/config'
+import { AI_CAPABILITY_LABELS } from '@/lib/config'
 import { Button } from '@/components/ui/button'
-
-/* Whether this kind of provider has recommended models to set up. */
-export function canAutoSetup(kind: ProviderKind): boolean {
-  return planAutoSetup(kind, []).models.length > 0
-}
 
 export function useAutoSetup(organizationId: string) {
   const utils = trpc.useUtils()

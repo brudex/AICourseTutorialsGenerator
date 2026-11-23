@@ -85,6 +85,7 @@ export {
   ROUTING_PRESET_LABELS,
   voiceCatalogFor,
   planAutoSetup,
+  canAutoSetup,
   modelVoicesFor,
   resolveVoiceForModel,
   DEFAULT_VOICE,

@@ -21,7 +21,7 @@ import { AiCapability } from '@/generated/prisma'
 import { trpc } from '@/trpc/react-provider'
 import { useActiveOrganization, useActiveOrganizationId } from '@/hooks/use-active-organization'
 import { permissions } from '@/lib/permissions'
-import { AI_CAPABILITY_LABELS, AI_PROVIDER_PRESETS } from '@/lib/config'
+import { AI_CAPABILITY_LABELS, AI_PROVIDER_PRESETS, canAutoSetup } from '@/lib/config'
 import type { NarrationModelChoice } from '@/lib/types'
 import { SettingsSection } from '@/components/global/settings-section'
 import { Badge } from '@/components/ui/badge'
@@ -43,7 +43,7 @@ import { ModelDialog } from './model-dialog'
 import { RoutingTable } from './routing-table'
 import { NarrationVoiceForm } from './narration-voice-form'
 import { AddModelGate, ProviderStatusLine, TestConnectionButton } from './provider-status'
-import { AutoSetupButton, canAutoSetup } from './auto-setup-button'
+import { AutoSetupButton } from './auto-setup-button'
 
 type PendingDelete =
   | { type: 'provider'; id: string; name: string }
