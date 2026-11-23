@@ -7,7 +7,8 @@
  * WHAT:  The teaching guide for each learner level: language, methodology,
  *        examples, structure, assessments, academic depth, illustration
  *        style and count, narration delivery, lecture length and suggested teaching
- *        styles. Plus small helpers that resolve a brief's profile.
+ *        styles. Plus small helpers that resolve a brief's profile, and the
+ *        picture count for an illustrated teaching style (illustrationRangeFor).
  * WHY:   One table drives everything that adapts to the audience: agent
  *        prompts (describeBriefForPrompt), lecture length caps (Curriculum
  *        Architect), picture style (Illustrator), voice pace (Narrator) and
@@ -113,7 +114,7 @@ export const LEARNER_LEVEL_GUIDES: Record<LearnerLevel, LearnerLevelGuide> = {
       'Modern, clean educational illustration for teenagers: confident flat style, realistic proportions, relatable everyday settings, clear focal point.',
     illustrations: { min: 1, max: 3 },
     narration: { speedFactor: 1, delivery: 'Clear, energetic and relatable, like an engaging secondary school teacher.' },
-    teachingStyles: ['Explain, show, then practise', 'Exam focused with worked examples', 'Real life projects and investigations'],
+    teachingStyles: ['Explain, show, then practise', 'Exam focused with worked examples', 'Real life projects and investigations', 'Visual, with illustrations and diagrams'],
   },
   undergraduates: {
     label: 'Undergraduates',
@@ -135,7 +136,7 @@ export const LEARNER_LEVEL_GUIDES: Record<LearnerLevel, LearnerLevelGuide> = {
       'Clean academic illustration: accurate, well labelled concepts drawn without text, neutral professional palette, precise and uncluttered.',
     illustrations: { min: 1, max: 2 },
     narration: { speedFactor: 1, delivery: 'Clear and engaging university lecturer: confident, structured and friendly.' },
-    teachingStyles: ['Lecture with worked examples', 'Problem solving and applications', 'Case studies and projects'],
+    teachingStyles: ['Lecture with worked examples', 'Problem solving and applications', 'Case studies and projects', 'Illustrated, with images and diagrams'],
   },
   graduates: {
     label: 'Graduates',
@@ -157,7 +158,7 @@ export const LEARNER_LEVEL_GUIDES: Record<LearnerLevel, LearnerLevelGuide> = {
       'Professional editorial illustration: realistic settings, calm sophisticated palette, clear concept focus.',
     illustrations: { min: 1, max: 2 },
     narration: { speedFactor: 1, delivery: 'Professional, confident and concise, like an experienced practitioner teaching peers.' },
-    teachingStyles: ['Applied case studies', 'Frameworks with real examples', 'Practical projects with feedback'],
+    teachingStyles: ['Applied case studies', 'Frameworks with real examples', 'Practical projects with feedback', 'Illustrated, with images and diagrams'],
   },
   masters: {
     label: "Master's",
@@ -179,7 +180,7 @@ export const LEARNER_LEVEL_GUIDES: Record<LearnerLevel, LearnerLevelGuide> = {
       'Sophisticated conceptual illustration: refined, minimal, abstract where helpful, scholarly tone.',
     illustrations: { min: 1, max: 2 },
     narration: { speedFactor: 1, delivery: 'Measured, thoughtful and authoritative, like a postgraduate seminar leader.' },
-    teachingStyles: ['Seminar style critical analysis', 'Research informed case studies', 'Independent applied project'],
+    teachingStyles: ['Seminar style critical analysis', 'Research informed case studies', 'Independent applied project', 'Illustrated, with figures and diagrams'],
   },
   phd: {
     label: 'PhD',
@@ -201,7 +202,7 @@ export const LEARNER_LEVEL_GUIDES: Record<LearnerLevel, LearnerLevelGuide> = {
       'Precise scientific style illustration: clean, accurate, minimal, like a figure in a research journal, no decoration.',
     illustrations: { min: 1, max: 1 },
     narration: { speedFactor: 1, delivery: 'Calm, precise and scholarly, like a senior researcher presenting to colleagues.' },
-    teachingStyles: ['Research seminar and critique', 'Methodology deep dives', 'Proposal and original research'],
+    teachingStyles: ['Research seminar and critique', 'Methodology deep dives', 'Proposal and original research', 'Illustrated, with figures and diagrams'],
   },
   professionals: {
     label: 'Professionals',
@@ -223,12 +224,39 @@ export const LEARNER_LEVEL_GUIDES: Record<LearnerLevel, LearnerLevelGuide> = {
       'Modern professional editorial illustration: realistic workplace settings, calm professional colours with deep blue accents.',
     illustrations: { min: 1, max: 3 },
     narration: { speedFactor: 1.05, delivery: 'Warm, clear and efficient, like an expert colleague coaching at work.' },
-    teachingStyles: ['Practical, with real-world examples', 'Project-based, build as you learn', 'Concise and fast-paced'],
+    teachingStyles: ['Practical, with real-world examples', 'Project-based, build as you learn', 'Concise and fast-paced', 'Illustrated, with images and diagrams'],
   },
 }
 
 export function learnerLevelGuide(level: LearnerLevel): LearnerLevelGuide {
   return LEARNER_LEVEL_GUIDES[level]
+}
+
+/**
+ * SOURCE OF TRUTH KEYWORDS: illustrationRangeFor, isVisualTeachingStyle,
+ *   VISUAL_TEACHING_STYLE_PATTERN, VISUAL_STYLE_ILLUSTRATIONS, illustrated
+ *   teaching style, more pictures per lecture
+ *
+ * WHAT:  How many pictures a lecture gets: the level's usual range, raised to
+ *        VISUAL_STYLE_ILLUSTRATIONS when the brief's teaching style asks for
+ *        a visual course (a suggested "Illustrated…" style, or the author's
+ *        own words mentioning images, pictures, illustrations or visuals).
+ * WHY:   Picking an illustrated style must actually change the lectures, not
+ *        only the wording in the brief. Matching words keeps typed styles
+ *        ("lectures with lots of images") working too.
+ * WHERE: Video Director (illustration count and visual-first rule).
+ */
+export const VISUAL_TEACHING_STYLE_PATTERN = /illustrat|image|picture|visual|figure/i
+export const VISUAL_STYLE_ILLUSTRATIONS = { min: 3, max: 4 } as const
+
+export function isVisualTeachingStyle(teachingStyle: string): boolean {
+  return VISUAL_TEACHING_STYLE_PATTERN.test(teachingStyle)
+}
+
+export function illustrationRangeFor(level: LearnerLevel, teachingStyle: string): { min: number; max: number } {
+  const usual = LEARNER_LEVEL_GUIDES[level].illustrations
+  if (!isVisualTeachingStyle(teachingStyle)) return usual
+  return { min: Math.max(usual.min, VISUAL_STYLE_ILLUSTRATIONS.min), max: Math.max(usual.max, VISUAL_STYLE_ILLUSTRATIONS.max) }
 }
 
 /* Lecture length for the brief's level; never above the platform cap. */

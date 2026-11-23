@@ -18,7 +18,7 @@ import 'server-only'
 
 import { AiCapability, LessonKind } from '@/generated/prisma'
 import { NARRATION_WORDS_PER_MINUTE, estimateNarrationMs, sceneScriptSchema, type CourseBrief } from '@/lib/types'
-import { learnerLevelGuide } from '@/lib/config/learner-levels'
+import { illustrationRangeFor, isVisualTeachingStyle, learnerLevelGuide } from '@/lib/config/learner-levels'
 import { hasRouteFor } from '@/lib/ai'
 import * as lessonService from '@/services/lesson.service'
 import { defineAgent } from './define-agent'
@@ -32,10 +32,10 @@ import {
   loadLessonContext,
 } from './course-context'
 
-/* How many pictures a lecture gets, by learner level (the welcome video: one). */
+/* How many pictures a lecture gets, by learner level and teaching style (the welcome video: one). */
 function illustrationRange(context: { lesson: { kind: LessonKind }; brief: CourseBrief }): string {
   if (context.lesson.kind === LessonKind.WELCOME) return '1'
-  const { min, max } = learnerLevelGuide(context.brief.audienceProfile.level).illustrations
+  const { min, max } = illustrationRangeFor(context.brief.audienceProfile.level, context.brief.teachingStyle)
   const top = Math.min(max, MAX_ILLUSTRATIONS_PER_LESSON)
   return min >= top ? String(top) : `${min} to ${top}`
 }
@@ -134,6 +134,13 @@ export const videoDirectorAgent = defineAgent({
           '- `pauseAfterMs` is 300 to 1200: longer after a key idea or a question, shorter between quick points.',
           '- `emphasis` lists the few key words or phrases to highlight, copied exactly as they appear in that scene’s narration.',
           '',
+          ...(isVisualTeachingStyle(context.brief.teachingStyle)
+            ? [
+                'VISUAL TEACHING STYLE',
+                `- The brief asks for a visual course. Show before you tell: prefer ${context.canIllustrate ? 'ILLUSTRATION, ' : ''}DIAGRAM and COMPARISON scenes for every idea that can be pictured, and use TALKING_POINTS only for short structure. Narration explains the picture on screen.`,
+                '',
+              ]
+            : []),
           'AUDIENCE AND LANGUAGE',
           '- Pitch every scene to the AUDIENCE SPECIALIZATION in the brief: narration vocabulary and sentence length, on-screen wording, examples, depth, pacing and quiz breaks all match that learner level. Beginners get prerequisites spelled out; advanced learners get trade-offs, edge cases and reasoning.',
           '- Use examples from the learner’s world and region as described in the brief.',
