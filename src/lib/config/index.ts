@@ -84,6 +84,7 @@ export {
   AI_CAPABILITY_LABELS,
   ROUTING_PRESET_LABELS,
   voiceCatalogFor,
+  modelVoicesFor,
   resolveVoiceForModel,
   DEFAULT_VOICE,
 } from './ai-providers'

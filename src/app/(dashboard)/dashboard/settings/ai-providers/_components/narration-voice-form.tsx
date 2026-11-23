@@ -6,7 +6,8 @@
  *   voice, VoiceProfile form, aiProviders.listVoices, voice per model
  *
  * WHAT:  Picks a voice model, loads that model's voices (live from its
- *        provider when it can list them, built in otherwise) and saves a
+ *        provider when it can list them, else the model's own saved voice
+ *        list; a typed voice id joins that list on save) and saves a
  *        voice, speed and speaking style for it. A model that is not the
  *        Narration model can be made the Narration model from here.
  * WHY:   Voice ids only work on their own model, so every voice model keeps
@@ -32,6 +33,8 @@ import {
   type NarrationVoiceModel,
   type SavedNarrationVoice,
   type SaveVoiceProfileValues,
+  type VoiceCatalogSource,
+  type VoiceNoticeTone,
 } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -44,6 +47,19 @@ import { Textarea } from '@/components/ui/textarea'
 const SPEEDS = [0.75, 0.9, 1, 1.1, 1.2, 1.25, 1.5] as const
 
 const ROLE_LABELS: Record<NarrationRouteRole, string> = { primary: 'Narration', fallback: 'Fallback' }
+
+/* Info notes are calm (nothing is broken); warnings stand out. */
+const NOTICE_TONE_CLASS: Record<VoiceNoticeTone, string> = {
+  info: 'text-muted-foreground',
+  warning: 'border-destructive/40 text-destructive',
+}
+
+/* Where the listed voices came from; edit a model's own voices in its model dialog. */
+const VOICE_SOURCE_COPY: Record<VoiceCatalogSource, (m: NarrationVoiceModel) => string> = {
+  live: (m) => `Voices loaded from ${m.providerName}.`,
+  model: (m) => `Voices saved on ${m.displayName}. Edit the model to change the list.`,
+  catalog: (m) => `Popular voices for ${m.displayName}. Edit the model to set its own list.`,
+}
 
 interface NarrationVoiceFormProps {
   organizationId: string
@@ -147,7 +163,10 @@ function ModelVoicePanel({
   if (!voices.data) return <p className="text-sm text-destructive">{voices.error?.message ?? 'Could not load voices.'}</p>
 
   const options = voices.data
-  const resolved = resolveVoiceForModel({ id: options.aiModelId, modelId: options.modelId, kind: options.providerKind }, profiles)
+  const resolved = resolveVoiceForModel(
+    { id: options.aiModelId, modelId: options.modelId, kind: options.providerKind, voices: options.voices.map((v) => v.id) },
+    profiles
+  )
   /* A default the provider's own list does not have falls back to its first voice. */
   const known = options.voices.length === 0 || options.voices.some((v) => v.id === resolved.voice)
   const initial = { ...resolved, voice: known ? resolved.voice : options.defaultVoice }
@@ -209,7 +228,12 @@ function VoiceProfileForm({
     setMessage(null)
     try {
       await save.mutateAsync(values)
-      await utils.aiProviders.listVoiceProfiles.invalidate({ organizationId })
+      /* A typed voice joins the model's list, so the voice list reloads too. */
+      await Promise.all([
+        utils.aiProviders.listVoiceProfiles.invalidate({ organizationId }),
+        utils.aiProviders.listVoices.invalidate({ organizationId, aiModelId: values.aiModelId }),
+        utils.aiProviders.list.invalidate({ organizationId }),
+      ])
       setMessage(`Voice saved for ${options.displayName}. Generate narration to apply it to existing courses.`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save the voice.')
@@ -242,16 +266,21 @@ function VoiceProfileForm({
                   </button>
                 ))}
               </div>
-              <FormControl>
-                <Input disabled={!canEdit} placeholder="Or type any voice id your provider supports" {...field} />
-              </FormControl>
+              {/* Voices are picked by name; raw ids are typed only when a model has none to pick (add more in its model dialog). */}
+              {options.voices.length === 0 ? (
+                <FormControl>
+                  <Input disabled={!canEdit} placeholder="Type a voice id your provider supports" {...field} />
+                </FormControl>
+              ) : null}
               <FormDescription>
-                {options.source === 'live'
-                  ? `Voices loaded from ${options.providerName}.`
-                  : `Built in voices for ${options.displayName}.`}
+                {VOICE_SOURCE_COPY[options.source](options)}
                 {unsupported.length > 0 ? ` This model does not use ${unsupported.join(' or ')}.` : ''}
               </FormDescription>
-              {options.notice ? <p className="text-sm text-destructive">{options.notice}</p> : null}
+              {options.notice ? (
+                <p className={cn('rounded-md border bg-muted/40 px-3 py-2 text-sm', NOTICE_TONE_CLASS[options.notice.tone])}>
+                  {options.notice.message}
+                </p>
+              ) : null}
               <FormMessage />
             </FormItem>
           )}

@@ -87,8 +87,14 @@ export type UpdateAiProviderValues = z.infer<typeof updateAiProviderSchema>
  * WHY:   Prices are entered by the user from their provider's pricing page;
  *        they drive every cost figure in the app, so they are required (0 is a
  *        valid price for local models).
+ *        TTS models also carry their own voice ids (`voices`), so the voices
+ *        a model speaks with are workspace data, not code.
  * WHERE: aiProviders.upsertModel; the model dialog.
  */
+/* One provider voice id, e.g. "Cherry", "af_heart", "<model>:anna". */
+export const voiceIdSchema = z.string().trim().min(1, 'Choose a voice.').max(120)
+export const MODEL_VOICES_LIMIT = 300
+
 export const upsertAiModelSchema = z.object({
   organizationId: z.string().min(1),
   id: z.string().min(1).nullable(),
@@ -100,6 +106,8 @@ export const upsertAiModelSchema = z.object({
   outputPricePerMTok: z.number().min(0).max(10_000),
   supportsJsonSchema: z.boolean(),
   contextWindow: z.number().int().min(1_000).max(10_000_000).nullable(),
+  /* Voice ids for Narration models; ignored for every other capability. */
+  voices: z.array(voiceIdSchema).max(MODEL_VOICES_LIMIT, `Keep it to ${MODEL_VOICES_LIMIT} voices or fewer.`),
   isEnabled: z.boolean(),
 })
 
@@ -167,6 +175,8 @@ export interface ChatMessage {
  */
 export const AI_ERROR_KINDS = [
   'auth',
+  /* The key is valid but lacks a permission for this call (restricted ElevenLabs keys). */
+  'permission',
   'rate_limit',
   'timeout',
   'network',
@@ -271,7 +281,7 @@ export const saveVoiceProfileSchema = z.object({
   organizationId: z.string().min(1),
   /* The AiModel this voice belongs to. */
   aiModelId: z.string().min(1, 'Choose a voice model.'),
-  voice: z.string().trim().min(1, 'Choose a voice.').max(120),
+  voice: voiceIdSchema,
   speed: z.number().min(VOICE_SPEED_LIMITS.min).max(VOICE_SPEED_LIMITS.max),
   instructions: z.string().trim().max(500),
 })
@@ -288,8 +298,9 @@ export type SaveVoiceProfileValues = z.infer<typeof saveVoiceProfileSchema>
  *        style instructions), the voice choices of one TTS model, and the
  *        models offered in the voice picker with their Narration role.
  * WHY:   Voices come from the provider when it can list them (ElevenLabs,
- *        local servers, SiliconFlow custom voices) and from the built-in
- *        catalog otherwise; the form, router and gateway share these shapes.
+ *        local servers, SiliconFlow custom voices), then from the model's own
+ *        saved voice ids, and from the built-in starter catalog only when the
+ *        model has none; the form, router and gateway share these shapes.
  * WHERE: VOICE_CATALOG and resolveVoiceForModel (lib/config/ai-providers.ts),
  *        listModelVoices and synthesizeSpeech (gateway), aiProviders.listVoices,
  *        NarrationVoiceForm, narrator agent.
@@ -314,7 +325,8 @@ export interface LiveVoiceList {
   complete: boolean
 }
 
-export const VOICE_CATALOG_SOURCES = ['live', 'catalog'] as const
+/* live = read from the provider; model = the model's saved voices; catalog = starter list. */
+export const VOICE_CATALOG_SOURCES = ['live', 'model', 'catalog'] as const
 export type VoiceCatalogSource = (typeof VOICE_CATALOG_SOURCES)[number]
 
 /** A stored profile; aiModelId is null only for voices saved before per model voices. */
@@ -353,8 +365,26 @@ export interface NarrationVoiceModel {
   defaultVoice: string
   controls: VoiceControls
   source: VoiceCatalogSource
-  /** Why the live list could not be read; null when it was (or none exists). */
-  notice: string | null
+  /** Why the live list could not be read, in plain words; null when it was (or none exists). */
+  notice: VoiceListNotice | null
+}
+
+/**
+ * SOURCE OF TRUTH KEYWORDS: VoiceListNotice, VOICE_NOTICE_TONES, voice list
+ *   notice, restricted key notice, voice picker message
+ *
+ * WHAT:  A client readable note shown under the voice picker when the
+ *        provider's own voice list could not be loaded.
+ * WHY:   `info` = nothing is broken (e.g. the key may not list voices, so
+ *        starter voices are shown); `warning` = the provider could not be
+ *        reached. Raw provider errors are never shown to clients here.
+ * WHERE: narrationVoiceModel (gateway), NarrationVoiceForm.
+ */
+export const VOICE_NOTICE_TONES = ['info', 'warning'] as const
+export type VoiceNoticeTone = (typeof VOICE_NOTICE_TONES)[number]
+export interface VoiceListNotice {
+  tone: VoiceNoticeTone
+  message: string
 }
 
 /**

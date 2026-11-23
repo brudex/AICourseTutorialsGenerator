@@ -34,6 +34,10 @@ const TASK_FAILURE_COPY: Record<AiErrorKind, Omit<TaskFailureDescription, 'techn
   not_found: { summary: 'The AI model for this step is no longer available.', action: `Choose another model. ${AI_SETTINGS}` },
   bad_request: { summary: 'The AI model could not accept this request.', action: `Try another model for this job. ${AI_SETTINGS}` },
   auth: { summary: 'Your AI provider did not accept the saved key.', action: `Update the key. ${AI_SETTINGS}` },
+  permission: {
+    summary: 'Your saved key is not allowed to do this step.',
+    action: 'Turn on the missing permission for the key in your provider’s dashboard, then retry.',
+  },
   not_configured: { summary: 'No AI model is set up for this step yet.', action: `Choose a model for it. ${AI_SETTINGS}` },
   content_policy: {
     summary: 'The AI provider declined to write this part.',

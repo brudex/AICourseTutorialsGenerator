@@ -42,6 +42,7 @@ export const AI_MODEL_SELECT = {
   outputPricePerMTok: true,
   supportsJsonSchema: true,
   contextWindow: true,
+  voices: true,
   isEnabled: true,
   createdAt: true,
 } satisfies Prisma.AiModelSelect
