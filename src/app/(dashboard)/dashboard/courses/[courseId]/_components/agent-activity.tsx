@@ -12,6 +12,8 @@
  *        Failed steps show plain words and what to do next
  *        (describeTaskFailure, keyed on the error kind); the precise technical
  *        reason stays one click away under "Details" for support.
+ *        Every step shows the AI model(s) it called (ModelTrail), so a
+ *        failing or slow model can be traced to its exact provider model id.
  * WHERE: Course workspace.
  */
 
@@ -37,7 +39,7 @@ import type { JobStatus, TaskStatus } from '@/generated/prisma'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import type { GenerationTaskRow } from '@/lib/types'
+import type { GenerationTaskRow, TaskModelUse } from '@/lib/types'
 import { describeTaskFailure } from '@/lib/generation/task-failure'
 
 const LIVE: readonly JobStatus[] = ['QUEUED', 'RUNNING']
@@ -86,6 +88,44 @@ function taskDetail(task: GenerationTaskRow): string {
     case 'FAILED':
       return describeTaskFailure(task).summary
   }
+}
+
+/**
+ * SOURCE OF TRUTH KEYWORDS: ModelTrail, model used by step, models tried,
+ *   fallback model order, TaskModelUse
+ *
+ * WHAT:  "qwen-plus · Alibaba", or "qwen-max · Alibaba ✗ → qwen-plus · Alibaba ✓"
+ *        when spare models ran. Failed calls are marked so the broken model
+ *        stands out.
+ * WHERE: Agent rows and Failed steps in AgentActivity.
+ */
+function ModelTrail({ models, emptyLabel }: { models: readonly TaskModelUse[]; emptyLabel: string | null }) {
+  if (models.length === 0) return emptyLabel ? <p className="text-xs text-muted-foreground">{emptyLabel}</p> : null
+  return (
+    <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
+      <span>{models.length > 1 ? 'Models:' : 'Model:'}</span>
+      {models.map((m, i) => (
+        <span key={`${m.providerName}:${m.modelName}`} className="inline-flex items-center gap-1">
+          {i > 0 ? <span aria-hidden>→</span> : null}
+          <code className={m.success ? 'font-mono text-foreground' : 'font-mono text-destructive'}>{m.modelName}</code>
+          <span>· {m.providerName}</span>
+          {m.success ? null : <XCircleIcon className="size-3 text-destructive" aria-label="failed" />}
+        </span>
+      ))}
+    </p>
+  )
+}
+
+/* Distinct models across an agent's steps, first use first. */
+function groupModels(tasks: readonly GenerationTaskRow[]): TaskModelUse[] {
+  const seen = new Map<string, TaskModelUse>()
+  for (const model of tasks.flatMap((t) => t.models)) {
+    const key = `${model.providerName}\u0000${model.modelName}`
+    const known = seen.get(key)
+    /* A model that failed in any step stays marked as failed for the group. */
+    seen.set(key, known ? { ...known, success: known.success && model.success } : model)
+  }
+  return [...seen.values()]
 }
 
 interface AgentGroup {
@@ -232,6 +272,7 @@ export function AgentActivity({
                   <p className={group.status === 'FAILED' ? 'text-xs text-destructive' : 'text-xs text-muted-foreground'}>
                     {single ? taskDetail(single) : groupDetail(group)}
                   </p>
+                  <ModelTrail models={groupModels(group.tasks)} emptyLabel={null} />
                 </div>
               </li>
             )
@@ -249,6 +290,7 @@ export function AgentActivity({
                       <p className="text-xs font-medium">{task.agentName}</p>
                       <p className="text-xs text-destructive">{failure.summary}</p>
                       {failure.action ? <p className="text-xs text-muted-foreground">{failure.action}</p> : null}
+                      <ModelTrail models={task.models} emptyLabel="No AI model was called for this step." />
                       {failure.technical && task.error ? (
                         <details className="text-xs text-muted-foreground">
                           <summary className="w-fit cursor-pointer underline-offset-4 hover:underline">Details</summary>

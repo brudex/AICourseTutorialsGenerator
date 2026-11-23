@@ -31,6 +31,8 @@ export interface SuggestedAiModel {
   displayName: string
   capabilities: AiCapability[]
   supportsJsonSchema: boolean
+  /** false: offered in the model picker but never chosen by "Set up for me". */
+  autoSetup?: boolean
 }
 
 export interface AiProviderPreset {
@@ -62,7 +64,7 @@ export const AI_PROVIDER_PRESETS: Record<ProviderKind, AiProviderPreset> = {
        * strings even with json_schema (desktop run, 2026-11-13), so it is
        * no longer suggested for strong reasoning. */
       { modelId: 'qwen-plus', displayName: 'Qwen Plus', capabilities: ['STRONG_REASONING', 'FAST_TEXT', 'LONG_CONTEXT'], supportsJsonSchema: true },
-      { modelId: 'qwen-max', displayName: 'Qwen Max (legacy)', capabilities: ['LONG_CONTEXT'], supportsJsonSchema: false },
+      { modelId: 'qwen-max', displayName: 'Qwen Max (legacy)', capabilities: ['LONG_CONTEXT'], supportsJsonSchema: false, autoSetup: false },
       { modelId: 'qwen-flash', displayName: 'Qwen Flash', capabilities: ['FAST_TEXT'], supportsJsonSchema: true },
       { modelId: 'qwen3-coder-plus', displayName: 'Qwen3 Coder Plus', capabilities: ['CODING'], supportsJsonSchema: true },
       { modelId: 'qwen3-tts-flash', displayName: 'Qwen3 TTS Flash (voice)', capabilities: ['TTS'], supportsJsonSchema: false },
@@ -93,6 +95,8 @@ export const AI_PROVIDER_PRESETS: Record<ProviderKind, AiProviderPreset> = {
     pricingUrl: 'https://openai.com/api/pricing',
     allowedCapabilities: null,
     suggestedModels: [
+      { modelId: 'gpt-4.1', displayName: 'GPT-4.1', capabilities: ['STRONG_REASONING', 'CODING', 'LONG_CONTEXT', 'VISION'], supportsJsonSchema: true },
+      { modelId: 'gpt-4.1-mini', displayName: 'GPT-4.1 mini', capabilities: ['FAST_TEXT'], supportsJsonSchema: true },
       { modelId: 'gpt-4o-mini-tts', displayName: 'GPT-4o mini TTS', capabilities: ['TTS'], supportsJsonSchema: false },
       { modelId: 'tts-1-hd', displayName: 'TTS-1 HD', capabilities: ['TTS'], supportsJsonSchema: false },
       { modelId: 'gpt-image-1', displayName: 'GPT Image 1 (illustrations)', capabilities: ['IMAGE_GENERATION'], supportsJsonSchema: false },
@@ -142,6 +146,143 @@ export const AI_PROVIDER_PRESETS: Record<ProviderKind, AiProviderPreset> = {
     allowedCapabilities: null,
     suggestedModels: [],
   },
+}
+
+/**
+ * SOURCE OF TRUTH KEYWORDS: planAutoSetup, AutoSetupPlan, set up for me,
+ *   recommended models, automatic routing, one click AI setup,
+ *   inferTextModels, model id by name, custom provider setup
+ *
+ * WHAT:  For one provider: which models to add (with the exact id the key
+ *        offers) and which model each capability should use.
+ * WHY:   People who are not technical connect a provider and press one
+ *        button. A suggestion is used when the key lists it, or a dated
+ *        variant of it (qwen-vl-ocr becomes qwen-vl-ocr-2025-11-20). Speech
+ *        and image models are kept even when unlisted, because providers
+ *        often leave them out of GET /models; with no list at all, every
+ *        suggestion is used. Each capability goes to the first suggestion
+ *        whose main role (first capability) it is, else the first that
+ *        serves it; only models that win a capability are added.
+ *        Text and vision jobs the suggestions leave open are then filled from
+ *        the key's own model list by name (inferTextModels), so Custom,
+ *        OpenRouter and local servers, and plans with newer model ids than
+ *        the suggestions, still get set up. Speech and pictures are never
+ *        guessed: they need provider specific APIs.
+ * WHERE: aiProviders.autoSetup; canAutoSetup (connect dialog, provider rows).
+ */
+const UNLISTED_OK: readonly AiCapability[] = ['TTS', 'IMAGE_GENERATION']
+
+export interface AutoSetupPlan {
+  models: SuggestedAiModel[]
+  /** Capability → the provider model id that should serve it. */
+  routes: Partial<Record<AiCapability, string>>
+}
+
+/* Ids that are not chat models (speech, audio, pictures, video, embeddings) or a router alias. */
+const NOT_A_CHAT_MODEL = /tts|asr|speech|audio|whisper|realtime|video|embed|rerank|moderation|image|^wan\d|flux|sdxl|dall-e|^auto$/i
+const VISION_MODEL = /(^|[-_.])(vl|ocr|vision)([-_.]|$)/i
+const CODING_MODEL = /coder|codestral/i
+const FAST_MODEL = /flash|mini|turbo|lite|haiku|nano|small|fast/i
+/* Higher tier = stronger model within a family. */
+const STRONG_TIERS: ReadonlyArray<readonly [RegExp, number]> = [
+  [/max|opus|ultra/i, 3],
+  [/pro|reasoner|large|sonnet/i, 2],
+  [/plus|medium/i, 1],
+]
+const DATED_SNAPSHOT = /-\d{4,8}$/
+const PRE_RELEASE = /preview|beta|exp/i
+
+/* Larger is better: stable alias over dated snapshot or preview, then the newest version number. */
+function modelRank(id: string, tier: number): number[] {
+  const version = Number.parseFloat(id.match(/\d+(?:\.\d+)?/)?.[0] ?? '0')
+  return [PRE_RELEASE.test(id) ? 0 : 1, tier, DATED_SNAPSHOT.test(id) ? 0 : 1, version]
+}
+
+/* Lexicographic compare of two ranks: positive when `a` is better. */
+function compareRank(a: readonly number[], b: readonly number[]): number {
+  for (let i = 0; i < a.length; i++) {
+    const diff = (a[i] ?? 0) - (b[i] ?? 0)
+    if (diff !== 0) return diff
+  }
+  return 0
+}
+
+function best(ids: readonly string[], tier: (id: string) => number = () => 0): string | null {
+  let winner: { id: string; rank: number[] } | null = null
+  for (const id of ids) {
+    const rank = modelRank(id, tier(id))
+    if (!winner || compareRank(rank, winner.rank) > 0) winner = { id, rank }
+  }
+  return winner?.id ?? null
+}
+
+/* Strong, fast, coding, long context and vision picks from a plain list of model ids. */
+function inferTextModels(availableModelIds: readonly string[]): Partial<Record<AiCapability, string>> {
+  const chat = availableModelIds.filter((id) => !NOT_A_CHAT_MODEL.test(id) && !VISION_MODEL.test(id))
+  const strongTier = (id: string) => STRONG_TIERS.find(([pattern]) => pattern.test(id))?.[1] ?? 0
+  const strong = best(chat.filter((id) => !FAST_MODEL.test(id)), strongTier) ?? best(chat)
+  if (!strong) return {}
+  const picks: Partial<Record<AiCapability, string>> = {
+    STRONG_REASONING: strong,
+    LONG_CONTEXT: strong,
+    FAST_TEXT: best(chat.filter((id) => FAST_MODEL.test(id))) ?? strong,
+    CODING: best(chat.filter((id) => CODING_MODEL.test(id)), strongTier) ?? strong,
+  }
+  const vision = best(availableModelIds.filter((id) => VISION_MODEL.test(id)))
+  if (vision) picks.VISION = vision
+  return picks
+}
+
+export function planAutoSetup(kind: ProviderKind, availableModelIds: readonly string[]): AutoSetupPlan {
+  const available = new Set(availableModelIds)
+  const resolve = (suggestion: SuggestedAiModel): string | null => {
+    if (available.size === 0 || available.has(suggestion.modelId)) return suggestion.modelId
+    const dated = availableModelIds.filter((id) => id.startsWith(`${suggestion.modelId}-`)).sort().at(-1)
+    if (dated) return dated
+    return suggestion.capabilities.some((c) => UNLISTED_OK.includes(c)) ? suggestion.modelId : null
+  }
+  const usable = AI_PROVIDER_PRESETS[kind].suggestedModels.flatMap((suggestion) => {
+    if (suggestion.autoSetup === false) return []
+    const modelId = resolve(suggestion)
+    return modelId ? [{ ...suggestion, modelId, capabilities: [...suggestion.capabilities] }] : []
+  })
+  /* A model's first capability is its main role (qwen-flash: Fast text), so
+   * main roles win first; any model that also serves a capability fills gaps. */
+  const routes: Partial<Record<AiCapability, string>> = {}
+  for (const model of usable) {
+    const main = model.capabilities.at(0)
+    if (main) routes[main] ??= model.modelId
+  }
+  for (const model of usable) {
+    for (const capability of model.capabilities) routes[capability] ??= model.modelId
+  }
+  /* Jobs still open are matched by name against the key's own list (text and vision only). */
+  const allowed = AI_PROVIDER_PRESETS[kind].allowedCapabilities
+  for (const [capability, modelId] of Object.entries(inferTextModels(availableModelIds)) as [AiCapability, string][]) {
+    if (routes[capability] || (allowed && !allowed.includes(capability))) continue
+    routes[capability] = modelId
+    const known = usable.find((model) => model.modelId === modelId)
+    if (known) {
+      if (!known.capabilities.includes(capability)) known.capabilities.push(capability)
+    } else {
+      usable.push({ modelId, displayName: modelId, capabilities: [capability], supportsJsonSchema: false })
+    }
+  }
+  const routed = new Set(Object.values(routes))
+  return { models: usable.filter((model) => routed.has(model.modelId)), routes }
+}
+
+/**
+ * SOURCE OF TRUTH KEYWORDS: canAutoSetup, set up for me availability
+ *
+ * WHAT:  Whether "Set up for me" is offered for a provider kind: it has
+ *        recommended models, or it can serve text jobs that are matched from
+ *        the key's own model list (Custom, OpenRouter, local servers).
+ * WHERE: ProviderDialog (connect), provider rows in AiProvidersSettings.
+ */
+export function canAutoSetup(kind: ProviderKind): boolean {
+  const preset = AI_PROVIDER_PRESETS[kind]
+  return preset.suggestedModels.length > 0 || preset.allowedCapabilities === null
 }
 
 /**

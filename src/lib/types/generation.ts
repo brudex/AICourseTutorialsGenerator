@@ -19,7 +19,7 @@
 import { z } from 'zod'
 
 import { TaskStatus } from '@/generated/prisma'
-import type { AiCapability, JobKind, JobStatus, Prisma } from '@/generated/prisma'
+import type { AiCapability, AiUsageEvent, JobKind, JobStatus, Prisma } from '@/generated/prisma'
 import type { DbClient } from '@/lib/config/prisma'
 import type { ChatMessage } from './ai'
 
@@ -212,4 +212,27 @@ export interface TaskFailureDescription {
   action: string | null
   /** True when `error` is technical and should only appear behind "Details". */
   technical: boolean
+}
+
+/**
+ * SOURCE OF TRUTH KEYWORDS: TaskModelUse, TaskModelCall, model used by step,
+ *   which model ran, agent step model, fallback model trace, summarizeTaskModels
+ *
+ * WHAT:  The AI models one agent step called, oldest first, each with the
+ *        outcome of its latest call (from the AiUsageEvent ledger).
+ * WHY:   When a step fails ("model not exist") the person needs to see which
+ *        provider model id was tried, and in what order spare models ran,
+ *        to fix the right setting.
+ * WHERE: summarizeTaskModels (src/lib/generation/task-models.ts),
+ *        generationJobs.get, AgentActivity.
+ */
+export type TaskModelCall = Pick<AiUsageEvent, 'modelName' | 'providerName' | 'success' | 'errorKind' | 'createdAt'>
+
+export interface TaskModelUse {
+  /** The provider's own model id, e.g. "qwen-plus". */
+  modelName: string
+  providerName: string
+  /** Outcome of this model's latest call in the step. */
+  success: boolean
+  errorKind: string | null
 }

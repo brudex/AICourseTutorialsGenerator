@@ -25,7 +25,7 @@ import { Loader2Icon } from 'lucide-react'
 
 import { ProviderKind } from '@/generated/prisma'
 import { trpc } from '@/trpc/react-provider'
-import { AI_PROVIDER_PRESETS } from '@/lib/config'
+import { AI_PROVIDER_PRESETS, canAutoSetup } from '@/lib/config'
 import {
   createAiProviderSchema,
   updateAiProviderSchema,
@@ -55,7 +55,9 @@ import { Input } from '@/components/ui/input'
 import { PasswordInput } from '@/components/global/password-input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { Checkbox } from '@/components/ui/checkbox'
 import type { AiProviderRow } from './ai-provider-types'
+import { useAutoSetup } from './auto-setup-button'
 
 interface ProviderDialogProps {
   organizationId: string
@@ -104,6 +106,8 @@ function useCredentialCheck() {
   const utils = trpc.useUtils()
   const [checking, setChecking] = React.useState(false)
   const [unverifiedReason, setUnverifiedReason] = React.useState<string | null>(null)
+  /* The model ids the last successful check returned (Set up for me reuses them). */
+  const checkedModelIds = React.useRef<string[] | null>(null)
 
   async function check(
     input: VerifyAiProviderValues,
@@ -111,9 +115,13 @@ function useCredentialCheck() {
   ): Promise<VerifyOutcome> {
     setChecking(true)
     setUnverifiedReason(null)
+    checkedModelIds.current = null
     try {
       const result = await utils.client.aiProviders.verifyCredentials.query(input)
-      if (result.ok) return 'ok'
+      if (result.ok) {
+        checkedModelIds.current = result.modelIds
+        return 'ok'
+      }
       if (result.errorKind === 'auth') {
         onRejected('The provider rejected this API key.')
         return 'rejected'
@@ -128,7 +136,7 @@ function useCredentialCheck() {
     }
   }
 
-  return { check, checking, unverifiedReason, clearUnverified: () => setUnverifiedReason(null) }
+  return { check, checking, unverifiedReason, clearUnverified: () => setUnverifiedReason(null), lastModelIds: () => checkedModelIds.current }
 }
 
 function UnverifiedNotice({ reason, onSaveAnyway, saving }: { reason: string; onSaveAnyway: () => void; saving: boolean }) {
@@ -147,6 +155,9 @@ function CreateProviderForm({ organizationId, onDone }: { organizationId: string
   const create = trpc.aiProviders.create.useMutation()
   const [error, setError] = React.useState<string | null>(null)
   const credentials = useCredentialCheck()
+  const setup = useAutoSetup(organizationId)
+  /* On by default: connecting a provider should leave courses ready to build. */
+  const [autoSetup, setAutoSetup] = React.useState(true)
 
   const form = useForm<CreateAiProviderValues>({
     resolver: zodResolver(createAiProviderSchema),
@@ -175,12 +186,13 @@ function CreateProviderForm({ organizationId, onDone }: { organizationId: string
   async function save(values: CreateAiProviderValues) {
     setError(null)
     try {
-      await create.mutateAsync(values)
+      const provider = await create.mutateAsync(values)
       await Promise.all([
         utils.aiProviders.list.invalidate({ organizationId }),
         utils.aiProviders.listVoices.invalidate({ organizationId }),
         utils.aiProviders.testConnection.invalidate(),
       ])
+      if (autoSetup && canAutoSetup(values.kind)) await setup.run(provider.id, credentials.lastModelIds() ?? undefined)
       onDone()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not connect this provider.')
@@ -265,6 +277,15 @@ function CreateProviderForm({ organizationId, onDone }: { organizationId: string
             </FormItem>
           )}
         />
+        {canAutoSetup(kind) ? (
+          <label className="flex items-start gap-3 rounded-lg border p-3 text-sm">
+            <Checkbox checked={autoSetup} onCheckedChange={(checked) => setAutoSetup(checked === true)} className="mt-0.5" />
+            <span className="space-y-0.5">
+              <span className="block font-medium">Set it up for me</span>
+              <span className="block text-muted-foreground">Adds the recommended models and uses them for writing, narration and pictures.</span>
+            </span>
+          </label>
+        ) : null}
         {credentials.unverifiedReason ? (
           <UnverifiedNotice
             reason={credentials.unverifiedReason}
@@ -277,9 +298,9 @@ function CreateProviderForm({ organizationId, onDone }: { organizationId: string
           <Button type="button" variant="outline" onClick={onDone}>
             Cancel
           </Button>
-          <Button type="submit" disabled={create.isPending || credentials.checking}>
-            {create.isPending || credentials.checking ? <Loader2Icon className="size-4 animate-spin" /> : null}
-            {credentials.checking ? 'Checking key…' : 'Connect'}
+          <Button type="submit" disabled={create.isPending || credentials.checking || setup.running}>
+            {create.isPending || credentials.checking || setup.running ? <Loader2Icon className="size-4 animate-spin" /> : null}
+            {credentials.checking ? 'Checking key…' : setup.running ? 'Setting up models…' : 'Connect'}
           </Button>
         </DialogFooter>
       </form>

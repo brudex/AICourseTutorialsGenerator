@@ -1,7 +1,7 @@
 /**
  * SOURCE OF TRUTH KEYWORDS: aiProvidersRouter, aiProviders.list,
  *   aiProviders.create, aiProviders.testConnection, aiProviders.upsertModel,
- *   aiProviders.setRoute, aiProviders.applyPreset, aiProviders.listVoices,
+ *   aiProviders.setRoute, aiProviders.applyPreset, aiProviders.autoSetup, aiProviders.listVoices,
  *   bring-your-own-key
  *
  * WHAT:  Workspace AI provider connections, their models, and the capability
@@ -25,11 +25,12 @@ import { TRPCError } from '@trpc/server'
 
 import { createTRPCRouter } from '../init'
 import { protectedProcedure } from '../procedures'
-import { AiCapability, Prisma } from '@/generated/prisma'
+import { AiCapability } from '@/generated/prisma'
 import { permissions } from '@/lib/permissions'
 import {
   aiCapabilitySchema,
   applyRoutingPresetSchema,
+  autoSetupProviderSchema,
   createAiProviderSchema,
   listModelVoicesSchema,
   saveVoiceProfileSchema,
@@ -49,7 +50,7 @@ import {
   testProviderConnection,
   verifyProviderCredentials,
 } from '@/lib/ai'
-import { AI_CAPABILITY_LABELS, AI_PROVIDER_PRESETS, modelVoicesFor } from '@/lib/config'
+import { AI_CAPABILITY_LABELS, AI_PROVIDER_PRESETS, modelVoicesFor, planAutoSetup } from '@/lib/config'
 import * as voiceService from '@/services/voice.service'
 import * as aiProviderService from '@/services/ai-provider.service'
 
@@ -64,12 +65,20 @@ function toClientModel(model: ModelRow) {
   }
 }
 
+/* Matched by name and code, not `instanceof`: Next can load the Prisma runtime
+ * twice (bundled and external), and then `instanceof` misses the error and
+ * the raw "Unique constraint failed" message reaches the user. */
+function prismaErrorCode(error: unknown): string | null {
+  if (!(error instanceof Error) || error.name !== 'PrismaClientKnownRequestError') return null
+  return 'code' in error && typeof error.code === 'string' ? error.code : null
+}
+
 function isUniqueViolation(error: unknown): boolean {
-  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002'
+  return prismaErrorCode(error) === 'P2002'
 }
 
 function isNotFound(error: unknown): boolean {
-  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025'
+  return prismaErrorCode(error) === 'P2025'
 }
 
 /* Maps the two Prisma errors users can trigger to readable tRPC errors. */
@@ -211,7 +220,7 @@ export const aiProvidersRouter = createTRPCRouter({
             })
         return toClientModel(model)
       } catch (error) {
-        rethrowKnown(error, 'This provider already has a model with that id.')
+        rethrowKnown(error, `${input.modelId} is already added to this provider. Edit it in the models list instead.`)
       }
     }),
 
@@ -333,6 +342,64 @@ export const aiProvidersRouter = createTRPCRouter({
         if (error instanceof AiGatewayError) throw new TRPCError({ code: 'PRECONDITION_FAILED', message: error.message })
         throw error
       }
+    }),
+
+  /* "Set up for me": adds the recommended models the key offers and routes every capability to them. */
+  autoSetup: protectedProcedure({
+    requirePermission: permissions.AI_PROVIDERS_UPDATE,
+    audit: { action: 'autoSetup', describe: 'Set up recommended AI models automatically' },
+  })
+    .input(autoSetupProviderSchema)
+    .mutation(async ({ ctx, input }) => {
+      const provider = await aiProviderService.findProviderCredentials(ctx.db, input.organizationId, input.providerId)
+      if (!provider) throw new TRPCError({ code: 'NOT_FOUND', message: 'Provider not found.' })
+      const plan = planAutoSetup(provider.kind, input.availableModelIds)
+      if (plan.models.length === 0) {
+        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'There are no recommended models for this provider yet. Add models yourself with Add model.' })
+      }
+
+      const existing = await aiProviderService.listModelsForProvider(ctx.db, input.organizationId, provider.id)
+      /* One entry per model id, so a plan naming a model twice cannot create it twice. */
+      const suggestions = [...new Map(plan.models.map((s) => [s.modelId, s])).values()]
+      for (const suggestion of suggestions) {
+        const found = existing.find((m) => m.modelId === suggestion.modelId)
+        if (!found) continue
+        /* Keep the user's own entry; just make sure it can serve its new jobs. */
+        const capabilities = [...new Set([...found.capabilities, ...suggestion.capabilities])]
+        if (capabilities.length !== found.capabilities.length || !found.isEnabled) {
+          await aiProviderService.updateModel(ctx.db, input.organizationId, found.id, { capabilities, isEnabled: true })
+        }
+      }
+      /* Missing models are added in one statement that skips ids another run already added. */
+      const added = await aiProviderService.createModelsIfMissing(
+        ctx.db,
+        suggestions
+          .filter((s) => !existing.some((m) => m.modelId === s.modelId))
+          .map((s) => ({
+            organizationId: input.organizationId,
+            providerId: provider.id,
+            modelId: s.modelId,
+            displayName: s.displayName,
+            capabilities: s.capabilities,
+            supportsJsonSchema: s.supportsJsonSchema,
+          }))
+      )
+      const saved = await aiProviderService.listModelsForProvider(ctx.db, input.organizationId, provider.id)
+      const idByModel = new Map(saved.map((m) => [m.modelId, m.id]))
+
+      const routes = await aiProviderService.listCapabilityRoutes(ctx.db, input.organizationId)
+      const routed: AiCapability[] = []
+      for (const capability of Object.values(AiCapability)) {
+        const modelId = plan.routes[capability]
+        const id = modelId ? idByModel.get(modelId) : undefined
+        if (!id) continue
+        const current = routes.find((r) => r.capability === capability)
+        /* The old primary becomes the fallback; the fallback must differ from the primary. */
+        const previous = current?.modelId !== id ? (current?.modelId ?? null) : (current?.fallbackModelId ?? null)
+        await aiProviderService.upsertCapabilityRoute(ctx.db, input.organizationId, capability, id, previous === id ? null : previous)
+        routed.push(capability)
+      }
+      return { added, kept: suggestions.length - added, routed }
     }),
 
   applyPreset: protectedProcedure({

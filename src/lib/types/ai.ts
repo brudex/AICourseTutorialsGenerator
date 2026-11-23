@@ -481,6 +481,23 @@ export const verifyAiProviderSchema = z.object({
 export type VerifyAiProviderValues = z.infer<typeof verifyAiProviderSchema>
 
 /**
+ * SOURCE OF TRUTH KEYWORDS: autoSetupProviderSchema, AutoSetupProviderValues,
+ *   set up for me, one click model setup
+ *
+ * WHAT:  "Set up for me" on a connected provider: the model ids its key
+ *        offers (from the connection check), so only usable recommended
+ *        models are added and routed.
+ * WHERE: aiProviders.autoSetup; the connect dialog and provider rows.
+ */
+export const autoSetupProviderSchema = z.object({
+  organizationId: z.string().min(1),
+  providerId: z.string().min(1),
+  availableModelIds: z.array(z.string().max(200)).max(2_000),
+})
+
+export type AutoSetupProviderValues = z.infer<typeof autoSetupProviderSchema>
+
+/**
  * SOURCE OF TRUTH KEYWORDS: dashScopeSpeechResponseSchema, DashScopeSpeechResponse,
  *   qwen3-tts response, DashScope native TTS
  *
