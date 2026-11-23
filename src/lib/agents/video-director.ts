@@ -48,7 +48,8 @@ export const videoDirectorAgent = defineAgent({
   outputSchema: sceneScriptSchema,
   schemaName: 'scene_script',
   temperature: 0.5,
-  maxOutputTokens: 8_000,
+  /* Full lecture scripts ran past 8,000 tokens on reasoning models. */
+  maxOutputTokens: 16_000,
   lessonIdOf: (input) => input.lessonId,
 
   loadContext: async (db, input, job) => {
