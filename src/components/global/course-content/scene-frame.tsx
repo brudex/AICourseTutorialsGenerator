@@ -22,6 +22,8 @@ import type { Scene } from '@/lib/types'
 import type { LessonSceneRow } from '@/lib/types'
 import { GRAPH_THEME } from '@/lib/config/slide-theme'
 import { renderGraphSvg } from '@/lib/math/graph'
+import { renderLatexHtml } from '@/lib/math/latex'
+import 'katex/dist/katex.min.css'
 
 export const SCENE_LABELS: Record<Scene['type'], string> = {
   TITLE_CARD: 'Title card',
@@ -36,6 +38,7 @@ export const SCENE_LABELS: Record<Scene['type'], string> = {
   QUIZ_BREAK: 'Quiz break',
   ILLUSTRATION: 'Illustration',
   GRAPH: 'Graph',
+  MATH_STEPS: 'Worked maths',
 }
 
 export function formatDuration(ms: number): string {
@@ -164,6 +167,28 @@ export function SceneFrame({
             />
           )}
           {scene.onScreen.caption ? <p className="text-xs text-muted-foreground">{scene.onScreen.caption}</p> : null}
+        </div>
+      )
+    case 'MATH_STEPS':
+      return (
+        <div className="flex h-full min-h-0 flex-col justify-center gap-3">
+          <FrameHeading>{scene.onScreen.heading}</FrameHeading>
+          <ol className="min-h-0 space-y-1.5 overflow-auto">
+            {scene.onScreen.steps.map((step, i) => (
+              <li
+                key={i}
+                className={cn(
+                  'flex items-center gap-3 rounded-md border border-transparent px-2 py-1',
+                  i === scene.onScreen.steps.length - 1 ? 'border-primary/40 bg-primary/5' : 'opacity-75'
+                )}
+              >
+                <span className="flex size-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-semibold">{i + 1}</span>
+                {/* KaTeX output (trust off): typeset maths only, no links or scripts. */}
+                <div className="min-w-0 flex-1 overflow-x-auto [&_.katex-display]:m-0 [&_.katex-display]:text-left" dangerouslySetInnerHTML={{ __html: renderLatexHtml(step.latex) }} />
+                {step.note ? <span className="max-w-[35%] shrink-0 text-xs text-muted-foreground">{step.note}</span> : null}
+              </li>
+            ))}
+          </ol>
         </div>
       )
     case 'CODE_WALKTHROUGH':

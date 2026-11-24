@@ -16,8 +16,9 @@ import 'server-only'
  * WHERE: Registered as `videoDirector`; runs after lessonWriter per lesson.
  */
 
-import { AiCapability, LessonKind } from '@/generated/prisma'
+import { AiCapability, LessonKind, SceneType } from '@/generated/prisma'
 import { NARRATION_WORDS_PER_MINUTE, estimateNarrationMs, sceneScriptSchema, type CourseBrief } from '@/lib/types'
+import { latexError } from '@/lib/math/latex'
 import { illustrationRangeFor, isVisualTeachingStyle, learnerLevelGuide } from '@/lib/config/learner-levels'
 import { hasRouteFor } from '@/lib/ai'
 import * as lessonService from '@/services/lesson.service'
@@ -45,7 +46,16 @@ export const videoDirectorAgent = defineAgent({
   description: 'Writes the lecture video: scenes, spoken narration, diagrams, graphs, code walkthroughs, demos',
   capability: AiCapability.STRONG_REASONING,
   inputSchema: lessonAgentInputSchema,
-  outputSchema: sceneScriptSchema,
+  /* LaTeX is checked here, not in sceneSchema, so KaTeX stays out of client bundles that import the types. */
+  outputSchema: sceneScriptSchema.superRefine((script, ctx) => {
+    script.scenes.forEach((scene, index) => {
+      if (scene.type !== SceneType.MATH_STEPS) return
+      scene.onScreen.steps.forEach((step, stepIndex) => {
+        const error = latexError(step.latex)
+        if (error) ctx.addIssue({ code: 'custom', path: ['scenes', index, 'onScreen', 'steps', stepIndex, 'latex'], message: `LaTeX does not typeset: ${error}` })
+      })
+    })
+  }),
   schemaName: 'scene_script',
   temperature: 0.5,
   /* Full lecture scripts ran past 8,000 tokens on reasoning models. */
@@ -90,6 +100,7 @@ export const videoDirectorAgent = defineAgent({
           '- TALKING_POINTS: a specific heading and 1 to 5 short bullets that appear as the narration reaches them.',
           '- DIAGRAM: valid Mermaid source (flowchart, sequenceDiagram, stateDiagram, classDiagram, or graph) for processes, flows, structures and relationships; keep it small and labels short. Write one statement per line with real line breaks (never `;` or `<br>` between statements). Wrap labels containing ( ) [ ] : # & or line breaks in double quotes, e.g. A["Profit (loss)"]. Every subgraph needs a name. No style, classDef, class or click lines: the slide theme colours the diagram.',
           '- GRAPH: a plotted function for maths, science, economics or statistics, drawn for the learner exactly as a plotting tool would. Each `curves[].expression` is a formula in x using + - * / ^, brackets, pi, e and sin, cos, tan, sqrt, abs, exp, ln, log (base 10); write multiplication explicitly (2*x) and put function arguments in brackets, e.g. "(x^2 - 4)/(x - 2)" or "sin(x)/x". Set xMin and xMax around the interesting part; leave yMin and yMax null to fit the curve. `points` mark key values, with `open: true` for a hole where the function is undefined (x = 2 for the example above). `guides` are dashed lines: axis "x" for x = a, axis "y" for y = L (a limit or asymptote).',
+          '- MATH_STEPS: a worked maths example as typeset equations, one LaTeX formula per step (no $ signs), each with an optional short note such as "power rule" or "substitute u = x^2". Use \\frac, ^{}, \\sqrt, \\sin, \\cdot, \\boxed{} for the final answer. The last step is highlighted as the newest, so reveal a derivation step by step with consecutive MATH_STEPS scenes: each repeats the earlier steps and adds the next one while the narration explains it.',
           '- CODE_WALKTHROUGH: complete code plus steps that highlight line ranges (1-based, within the code) while the narration explains what each part does and why.',
           '- CODE_TYPING: a live demo where `typedCode` is typed into `fileName` (after `initialCode`); `result` is what running it shows and must follow exactly from that code.',
           '- COMPARISON: two columns such as wrong vs right, before vs after, manual vs automated; the narration explains why the difference matters.',
@@ -105,7 +116,7 @@ export const videoDirectorAgent = defineAgent({
           '',
           'DIRECTING',
           '- One idea per scene. Keep each scene’s narration to about 2 to 4 short sentences (roughly 20 to 30 seconds, never more than about 80 words); when there is more to say, start a new scene with its own visual.',
-          '- Choose the scene type by what explains the idea best: DIAGRAM for processes and relationships, GRAPH for functions, curves, limits, rates and trends, CODE_WALKTHROUGH to explain code, CODE_TYPING to build it, COMPARISON for contrasts, ILLUSTRATION for real people, places and situations, TALKING_POINTS for a short structure.',
+          '- Choose the scene type by what explains the idea best: DIAGRAM for processes and relationships, GRAPH for functions, curves, limits, rates and trends, MATH_STEPS for formulas, rules and worked calculations, CODE_WALKTHROUGH to explain code, CODE_TYPING to build it, COMPARISON for contrasts, ILLUSTRATION for real people, places and situations, TALKING_POINTS for a short structure.',
           '- The narration and the screen cover the same idea at the same moment; never show something before it is introduced.',
           '- Vary the visuals; never more than two TALKING_POINTS scenes in a row.',
           '- The screen shows keywords, diagrams and code; the voice explains. Never put a paragraph or the narration itself on screen.',
@@ -129,6 +140,7 @@ export const videoDirectorAgent = defineAgent({
           'ACCURACY',
           '- The written lesson is the source of truth. Keep its meaning; do not invent facts, figures, APIs, features or results. Explain hard ideas instead of dropping them.',
           '- Code is on screen only when writing code is part of what this course teaches (a programming, data or software course, or a brief that asks for it). In any other course (for example maths, science, business), never show code: when the lesson uses code to draw a graph or chart (matplotlib, numpy, Excel formulas), show the picture itself (a GRAPH for a plotted function, otherwise a DIAGRAM or COMPARISON) and narrate what it shows, not how it was programmed.',
+          '- Formulas and calculations always go in MATH_STEPS as LaTeX, never in a code scene or as plain text like sin(x^2) or dy/dx = dy/du * du/dx. In narration, say formulas in words ("two x times cosine of x squared").',
           '- Use the lesson’s code samples for code scenes, unchanged, so on-screen code matches the downloads. Highlight ranges must point at real lines.',
           '- Never claim code produces output it would not produce.',
           '',

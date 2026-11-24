@@ -25,6 +25,8 @@ import { escapeHtml, highlightCodeHtml } from './html'
 
 import { GRAPH_THEME, SLIDE_SIZE, SLIDE_THEME as T } from '@/lib/config/slide-theme'
 import { renderGraphSvg } from '@/lib/math/graph'
+import { renderLatexHtml } from '@/lib/math/latex'
+import { katexCss } from './katex-css'
 import type { Scene } from '@/lib/types'
 
 export interface SlideRenderInput {
@@ -90,6 +92,20 @@ async function body(input: SlideRenderInput): Promise<string> {
       return `<div class="stack fill">${heading(scene.onScreen.heading, 56)}
         <div class="diagram" style="height:680px">${input.diagramSvg ?? renderGraphSvg(scene.onScreen, GRAPH_THEME)}</div>
         ${scene.onScreen.caption ? `<p class="sub" style="font-size:28px">${esc(scene.onScreen.caption)}</p>` : ''}</div>`
+    case 'MATH_STEPS': {
+      const steps = scene.onScreen.steps
+      const size = steps.length <= 2 ? 54 : steps.length <= 3 ? 46 : steps.length <= 4 ? 40 : 34
+      const last = steps.length - 1
+      return `<div class="stack fill">${heading(scene.onScreen.heading, 56)}
+        <ol class="math-steps" style="font-size:${size}px">${steps
+          .map(
+            (step, i) => `<li class="${i === last && steps.length > 1 ? 'current' : ''}">
+              <span class="num">${i + 1}</span>
+              <div class="eq">${renderLatexHtml(step.latex)}</div>
+              ${step.note ? `<span class="note">${esc(step.note)}</span>` : ''}</li>`
+          )
+          .join('')}</ol></div>`
+    }
     case 'CODE_WALKTHROUGH': {
       const html = await highlightCode(
         scene.onScreen.code,
@@ -145,7 +161,9 @@ async function body(input: SlideRenderInput): Promise<string> {
 
 export async function renderSlideHtml(input: SlideRenderInput): Promise<string> {
   const { width, height } = SLIDE_SIZE
-  return `<!doctype html><html><head><meta charset="utf-8"><style>
+  /* KaTeX's stylesheet and fonts only where there is maths to typeset. */
+  const mathCss = input.scene.type === 'MATH_STEPS' ? await katexCss() : ''
+  return `<!doctype html><html><head><meta charset="utf-8"><style>${mathCss}
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{width:${width}px;height:${height}px;overflow:hidden}
   body{background:${T.background};color:${T.text};font-family:${T.fontSans};-webkit-font-smoothing:antialiased}
@@ -183,6 +201,14 @@ export async function renderSlideHtml(input: SlideRenderInput): Promise<string> 
   .options{display:grid;grid-template-columns:1fr 1fr;gap:28px}
   .option{display:flex;gap:24px;align-items:center;font-size:38px;background:${T.surface};border:2px solid ${T.border};border-radius:20px;padding:30px 36px}
   .option b{color:${T.accent}}
+  .math-steps{list-style:none;display:flex;flex-direction:column;gap:0.35em;min-height:0}
+  .math-steps li{display:flex;align-items:center;gap:0.6em;padding:0.18em 0.6em;border-radius:20px;border:2px solid transparent;opacity:.72}
+  .math-steps li.current,.math-steps li:only-child{opacity:1;background:${T.accentSoft};border-color:${T.accent}}
+  .math-steps .num{flex:none;width:1.7em;height:1.7em;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:0.6em;font-weight:700;color:${T.accent};border:2px solid ${T.accent}}
+  .math-steps .eq{flex:1;min-width:0;color:${T.text}}
+  .math-steps .eq .katex-display{margin:0;text-align:left}
+  .math-steps .eq .katex-display>.katex{text-align:left}
+  .math-steps .note{flex:none;max-width:34%;font-size:0.56em;line-height:1.3;color:${T.mutedText}}
   .footer{position:absolute;left:140px;right:140px;top:48px;display:flex;justify-content:space-between;font-size:22px;color:${T.mutedText}}
   </style></head><body><div class="frame">${await body(input)}
   <div class="footer"><span>${esc(input.lessonTitle)}</span><span>${esc(input.courseTitle)}</span></div>

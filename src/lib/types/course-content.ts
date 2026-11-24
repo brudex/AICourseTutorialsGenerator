@@ -727,6 +727,19 @@ export const sceneSchema = z.discriminatedUnion('type', [
     }),
   }),
   z.object({
+    type: z.literal(SceneType.MATH_STEPS),
+    ...sceneCommon,
+    onScreen: z.object({
+      heading,
+      /* Each step is one LaTeX formula (typeset by src/lib/math/latex.ts) with an
+       * optional short note; the last step is highlighted as the newest. */
+      steps: z
+        .array(z.object({ latex: z.string().min(1).max(300), note: z.string().max(120).nullable() }))
+        .min(1)
+        .max(6),
+    }),
+  }),
+  z.object({
     type: z.literal(SceneType.CODE_WALKTHROUGH),
     ...sceneCommon,
     onScreen: z.preprocess(

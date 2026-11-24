@@ -663,6 +663,8 @@ enum SceneType {
   ILLUSTRATION
   /// A plotted function graph (maths, science, economics): drawn, never shown as code.
   GRAPH
+  /// A worked maths derivation: typeset equations (KaTeX), one per step, the newest highlighted.
+  MATH_STEPS
 }
 
 /// LessonScene — one scene of a lesson's video script, owned by a
