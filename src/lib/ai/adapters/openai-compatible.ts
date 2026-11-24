@@ -141,7 +141,8 @@ export async function listProviderModels(endpoint: ProviderEndpoint): Promise<st
   try {
     const ids: string[] = []
     for await (const model of client.models.list()) {
-      ids.push(model.id)
+      /* Gemini lists ids as "models/gemini-2.5-flash"; chat takes the bare id. */
+      ids.push(model.id.replace(/^models\//, ''))
       if (ids.length >= MAX_LISTED_MODELS) break
     }
     return ids.sort((a, b) => a.localeCompare(b))
@@ -179,26 +180,46 @@ export async function createSpeech(
 }
 
 /**
+ * SOURCE OF TRUTH KEYWORDS: ImageRequestBody, image request dialect,
+ *   Novita Ming Image body, ming-image-0.1-design
+ *
+ * WHAT:  Which /images/generations body a provider expects. `openai` is the
+ *        generic { model, prompt, size, n: 1 }. `novita` is Novita's Ming
+ *        Image body: no `n` (undocumented there), base64 PNG asked for
+ *        explicitly, and no watermark.
+ * WHY:   Same endpoint and reply, different accepted fields; unknown fields
+ *        risk a 400, so each provider gets only what its docs list.
+ * WHERE: chosen by provider kind in generateImage (src/lib/ai/gateway.ts).
+ */
+export type ImageRequestBody = 'openai' | 'novita'
+
+function imageRequestBody(params: { model: string; prompt: string; size: string; body: ImageRequestBody }) {
+  const { model, prompt, size } = params
+  if (params.body === 'novita') return { model, prompt, size, response_format: 'b64_json', output_format: 'png', watermark: false }
+  return { model, prompt, size, n: 1 }
+}
+
+/**
  * SOURCE OF TRUTH KEYWORDS: createImage, images/generations, OpenAI image
- *   generation, gpt-image-1
+ *   generation, gpt-image-1, Novita Ming Image
  *
  * WHAT:  One image from an OpenAI-compatible /images/generations endpoint,
  *        as bytes (base64 replies decoded, URL replies downloaded).
- * WHY:   Plain HTTP rather than the SDK: providers accept sizes the SDK's
- *        types do not list. Download URLs pass the same URL guard as every
- *        provider call.
+ * WHY:   Plain HTTP rather than the SDK: providers accept sizes and fields the
+ *        SDK's types do not list. Download URLs pass the same URL guard as
+ *        every provider call.
  * WHERE: generateImage in src/lib/ai/gateway.ts for non-Alibaba providers.
  */
 export async function createImage(
   endpoint: ProviderEndpoint,
-  params: { model: string; prompt: string; size: string }
+  params: { model: string; prompt: string; size: string; body?: ImageRequestBody }
 ): Promise<Uint8Array> {
   await assertProviderUrlAllowed(endpoint.baseUrl)
   try {
     const response = await fetch(`${endpoint.baseUrl.replace(/\/+$/, '')}/images/generations`, {
       method: 'POST',
       headers: { ...(endpoint.apiKey ? { authorization: `Bearer ${endpoint.apiKey}` } : {}), 'content-type': 'application/json' },
-      body: JSON.stringify({ model: params.model, prompt: params.prompt, size: params.size, n: 1 }),
+      body: JSON.stringify(imageRequestBody({ ...params, body: params.body ?? 'openai' })),
       signal: AbortSignal.timeout(300_000),
     })
     if (!response.ok) throw aiErrorFromStatus(response.status, await response.text().catch(() => `HTTP ${response.status}`))

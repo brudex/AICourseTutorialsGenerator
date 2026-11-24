@@ -136,6 +136,34 @@ export const AI_PROVIDER_PRESETS: Record<ProviderKind, AiProviderPreset> = {
       { modelId: 'eleven_turbo_v2_5', displayName: 'Eleven Turbo v2.5', capabilities: ['TTS'], supportsJsonSchema: false },
     ],
   },
+  NOVITA: {
+    label: 'Novita AI',
+    /* Chat models are OpenAI-compatible; Ming Image gets its own request body (createImage). */
+    description: 'Ming Image illustrations and open models through Novita’s OpenAI-compatible API.',
+    defaultBaseUrl: 'https://api.novita.ai/openai/v1',
+    alternateBaseUrls: [],
+    apiKeyRequired: true,
+    pricingUrl: 'https://novita.ai/pricing',
+    allowedCapabilities: null,
+    suggestedModels: [
+      { modelId: 'ming-image-0.1-design', displayName: 'Ming Image 0.1 Design (illustrations)', capabilities: ['IMAGE_GENERATION'], supportsJsonSchema: false },
+    ],
+  },
+  GEMINI: {
+    label: 'Google Gemini',
+    /* Google's OpenAI-compatible endpoint; a pasted native /v1beta URL is
+     * corrected by normalizeProviderBaseUrl. Keys come from Google AI Studio. */
+    description: 'Gemini models through Google’s OpenAI-compatible API. Get a key at aistudio.google.com.',
+    defaultBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    alternateBaseUrls: [],
+    apiKeyRequired: true,
+    pricingUrl: 'https://ai.google.dev/gemini-api/docs/pricing',
+    allowedCapabilities: null,
+    suggestedModels: [
+      { modelId: 'gemini-2.5-pro', displayName: 'Gemini 2.5 Pro', capabilities: ['STRONG_REASONING', 'CODING', 'LONG_CONTEXT', 'VISION'], supportsJsonSchema: true },
+      { modelId: 'gemini-2.5-flash', displayName: 'Gemini 2.5 Flash', capabilities: ['FAST_TEXT'], supportsJsonSchema: true },
+    ],
+  },
   CUSTOM: {
     label: 'Custom (OpenAI-compatible)',
     description: 'Any other endpoint that speaks the OpenAI chat-completions protocol.',
@@ -237,7 +265,11 @@ export function planAutoSetup(kind: ProviderKind, availableModelIds: readonly st
   const available = new Set(availableModelIds)
   const resolve = (suggestion: SuggestedAiModel): string | null => {
     if (available.size === 0 || available.has(suggestion.modelId)) return suggestion.modelId
-    const dated = availableModelIds.filter((id) => id.startsWith(`${suggestion.modelId}-`)).sort().at(-1)
+    /* Dated variants only: ming-image-0.1-design-layer is a different model, not a snapshot. */
+    const dated = availableModelIds
+      .filter((id) => id.startsWith(`${suggestion.modelId}-`) && /^\d/.test(id.slice(suggestion.modelId.length + 1)))
+      .sort()
+      .at(-1)
     if (dated) return dated
     return suggestion.capabilities.some((c) => UNLISTED_OK.includes(c)) ? suggestion.modelId : null
   }

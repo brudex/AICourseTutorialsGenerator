@@ -46,7 +46,7 @@ import type {
   SavedNarrationVoice,
   SpeechDelivery,
 } from '@/lib/types'
-import { SPARE_MODEL_AI_ERROR_KINDS } from '@/lib/types'
+import { SPARE_MODEL_AI_ERROR_KINDS, normalizeProviderBaseUrl } from '@/lib/types'
 import * as aiProviderService from '@/services/ai-provider.service'
 import type { ModelWithCredentials } from '@/services/ai-provider.service'
 import { AiCapability as Capability, ProviderKind } from '@/generated/prisma'
@@ -100,7 +100,7 @@ function addUsage(total: AiUsage, next: AiUsage): AiUsage {
 
 function endpointFor(model: ModelWithCredentials): ProviderEndpoint {
   const { apiKeyCiphertext, baseUrl } = model.provider
-  return { baseUrl, apiKey: apiKeyCiphertext ? decryptApiKey(apiKeyCiphertext) : null }
+  return { baseUrl: normalizeProviderBaseUrl(baseUrl), apiKey: apiKeyCiphertext ? decryptApiKey(apiKeyCiphertext) : null }
 }
 
 function modelSummary(model: ModelWithCredentials): AiGenerateResult<never>['model'] {
@@ -396,7 +396,7 @@ export async function testProviderConnection(
   const startedAt = Date.now()
   try {
     const modelIds = await listModelsFor(provider.kind, {
-      baseUrl: provider.baseUrl,
+      baseUrl: normalizeProviderBaseUrl(provider.baseUrl),
       apiKey: provider.apiKeyCiphertext ? decryptApiKey(provider.apiKeyCiphertext) : null,
     })
     return { ok: true, latencyMs: Date.now() - startedAt, modelIds }
@@ -493,7 +493,8 @@ export async function synthesizeSpeech(request: {
 }
 
 /* Widescreen sizes each provider accepts: Qwen-Image's documented 16:9
- * size, and the landscape size OpenAI-style image models support. */
+ * size, and the landscape size OpenAI-style image models support (also
+ * valid for Novita's Ming Image, whose minimum is 1k). */
 const IMAGE_SIZE_ALIBABA = '2688*1536'
 const IMAGE_SIZE_OPENAI = '1536x1024'
 
@@ -512,7 +513,7 @@ function detectImage(bytes: Uint8Array): Pick<AiImageResult, 'mimeType' | 'exten
  * WHAT:  One widescreen picture from the model routed to IMAGE_GENERATION.
  * WHY:   Same routing, fallback and cost ledger as every call. Alibaba models
  *        use the native API (createDashScopeImage), others the OpenAI-style
- *        endpoint. Image models are priced per picture: the model's input
+ *        endpoint (Novita with its own request body). Image models are priced per picture: the model's input
  *        price holds the price of one image.
  * WHERE: Illustrator (src/lib/agents/illustrator.ts) via the Visual Renderer.
  */
@@ -533,7 +534,12 @@ export async function generateImage(request: {
               negativePrompt: request.negativePrompt,
               size: IMAGE_SIZE_ALIBABA,
             })
-          : await createImage(endpointFor(model), { model: model.modelId, prompt: request.prompt, size: IMAGE_SIZE_OPENAI })
+          : await createImage(endpointFor(model), {
+              model: model.modelId,
+              prompt: request.prompt,
+              size: IMAGE_SIZE_OPENAI,
+              body: model.provider.kind === ProviderKind.NOVITA ? 'novita' : 'openai',
+            })
       const format = detectImage(image)
       const usage: AiUsage = {
         inputTokens: 0,

@@ -214,6 +214,7 @@ export {
   elevenLabsErrorSchema,
   compatibleVoicesResponseSchema,
   siliconFlowVoiceListSchema,
+  normalizeProviderBaseUrl,
 } from './ai'
 export type {
   CreateAiProviderValues,
