@@ -38,6 +38,32 @@ export const baseUrlSchema = z
   .url('Enter a valid URL.')
   .max(500)
   .refine((value) => /^https?:\/\//i.test(value), 'URL must start with http:// or https://')
+  .transform(normalizeProviderBaseUrl)
+
+/**
+ * SOURCE OF TRUTH KEYWORDS: normalizeProviderBaseUrl, Gemini base URL,
+ *   generativelanguage.googleapis.com, v1beta/openai
+ *
+ * WHAT:  Fixes base URLs that point at a provider's native API instead of its
+ *        OpenAI-compatible one. Today: Google Gemini, whose compatible API
+ *        lives under /v1beta/openai — the native /v1beta (what Google's docs
+ *        show first) answers /models in another shape and rejects Bearer keys.
+ * WHY:   People paste the URL from Google's docs; the app should just work.
+ * WHERE: baseUrlSchema (on save and test) and endpointFor in
+ *        src/lib/ai/gateway.ts (providers saved before this fix).
+ */
+export function normalizeProviderBaseUrl(value: string): string {
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    return value
+  }
+  if (url.hostname !== 'generativelanguage.googleapis.com') return value
+  const path = url.pathname.replace(/\/+$/, '')
+  if (/\/openai$/.test(path)) return `${url.origin}${path}`
+  return `${url.origin}${path === '' ? '/v1beta' : path}/openai`
+}
 
 /**
  * SOURCE OF TRUTH KEYWORDS: createAiProviderSchema, CreateAiProviderValues
@@ -522,6 +548,8 @@ export type DashScopeSpeechResponse = z.infer<typeof dashScopeSpeechResponseSche
  * WHAT:  The parts of an image-generation reply the adapters read: Alibaba's
  *        native reply (image URL in output.choices[0].message.content[0].image)
  *        and the OpenAI-style reply (data[0].b64_json or data[0].url).
+ *        Not strict: extra fields (Novita's usage, output_format, size at
+ *        either level) are ignored.
  * WHY:   Provider replies are untrusted input; a changed API becomes a clear
  *        invalid_output error. Alibaba's URLs expire after 24 hours, so the
  *        adapter downloads the image at once.

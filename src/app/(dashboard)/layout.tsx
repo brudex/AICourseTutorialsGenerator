@@ -29,7 +29,6 @@ import { headers } from 'next/headers'
 import { HydrationBoundary, dehydrate } from '@tanstack/react-query'
 
 import { getSidebarNav } from '@/lib/resources'
-import { permissions } from '@/lib/permissions'
 import { getFeatureGates } from '@/lib/feature-gate'
 
 import { getServerSession } from '@/lib/adapters/session'

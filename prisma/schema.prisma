@@ -780,6 +780,8 @@ model AssessmentItem {
 /// ProviderKind — most providers speak the OpenAI-compatible protocol; the
 /// kind selects base-URL presets and per-provider quirks in the adapter.
 /// ELEVENLABS is voice only and uses its own API (adapters/elevenlabs.ts).
+/// NOVITA is OpenAI-compatible; its Ming Image model needs its own image body.
+/// GEMINI is Google's OpenAI-compatible endpoint (…/v1beta/openai).
 enum ProviderKind {
   ALIBABA
   DEEPSEEK
@@ -788,6 +790,8 @@ enum ProviderKind {
   LOCAL
   CUSTOM
   ELEVENLABS
+  NOVITA
+  GEMINI
 }
 
 /// AiCapability — what an agent asks for instead of a model name (blueprint §23).

@@ -31,11 +31,11 @@ import * as React from 'react'
 import Link from 'next/link'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { ArrowLeftIcon, Loader2Icon } from 'lucide-react'
+import { ArrowLeftIcon } from 'lucide-react'
 
 import { trpc } from '@/trpc/react-provider'
 import { setActiveOrganization } from '@/lib/adapters/actions.client'
-import { ROUTES, SUBSCRIPTIONS_ENABLED, isPaidPlan, PLANS, type PlanKey, type BillingInterval } from '@/lib/config'
+import { ROUTES, SUBSCRIPTIONS_ENABLED, isPaidPlan, type PlanKey } from '@/lib/config'
 import {
   organizationNameFormSchema,
   type CreateOrganizationValues,
@@ -61,9 +61,7 @@ interface CreatedOrg {
 
 export function OnboardingFlow() {
   const [step, setStep] = React.useState<Step>('details')
-  const [name, setName] = React.useState('')
-  const [selectedPlan, setSelectedPlan] = React.useState<PlanKey>('free')
-  const [interval, setInterval] = React.useState<BillingInterval>('monthly')
+  const [selectedPlan] = React.useState<PlanKey>('free')
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
 
@@ -84,7 +82,7 @@ export function OnboardingFlow() {
   const STEP_LABELS: string[] = ['Name your workspace', 'Choose a plan', 'Payment']
   const hasAccessStep = STEP_ORDER.includes('access')
   /* Fields the workspace is created with besides its name. */
-  let createExtras: Omit<CreateOrganizationValues, 'name' | 'logo'> = {}
+  const createExtras: Omit<CreateOrganizationValues, 'name' | 'logo'> = {}
   const stepNumber = STEP_ORDER.indexOf(step) + 1
   const totalSteps = !SUBSCRIPTIONS_ENABLED ? STEP_ORDER.indexOf('plan') : isPaidPlan(selectedPlan) ? STEP_ORDER.length : STEP_ORDER.length - 1
 
@@ -98,7 +96,6 @@ export function OnboardingFlow() {
   }
 
   function onDetailsSubmit(values: OrganizationNameFormValues) {
-    setName(values.name)
     setError(null)
     if (hasAccessStep) setStep('access')
     else void afterSetup(values.name, createExtras)
