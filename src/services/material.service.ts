@@ -104,7 +104,7 @@ export function listLessonFigureScenes(db: DbClient, courseId: string) {
           scenes: {
             where: {
               OR: [
-                { type: 'DIAGRAM', diagramAssetId: { not: null } },
+                { type: { in: ['DIAGRAM', 'GRAPH'] }, diagramAssetId: { not: null } },
                 { type: 'ILLUSTRATION', imageAssetId: { not: null } },
               ],
             },

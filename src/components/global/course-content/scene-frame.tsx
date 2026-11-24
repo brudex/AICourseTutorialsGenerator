@@ -20,6 +20,8 @@ import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import type { Scene } from '@/lib/types'
 import type { LessonSceneRow } from '@/lib/types'
+import { GRAPH_THEME } from '@/lib/config/slide-theme'
+import { renderGraphSvg } from '@/lib/math/graph'
 
 export const SCENE_LABELS: Record<Scene['type'], string> = {
   TITLE_CARD: 'Title card',
@@ -33,6 +35,7 @@ export const SCENE_LABELS: Record<Scene['type'], string> = {
   EXERCISE_PROMPT: 'Exercise',
   QUIZ_BREAK: 'Quiz break',
   ILLUSTRATION: 'Illustration',
+  GRAPH: 'Graph',
 }
 
 export function formatDuration(ms: number): string {
@@ -142,6 +145,25 @@ export function SceneFrame({
           <p className="text-xs text-muted-foreground">
             {scene.onScreen.caption ?? (diagramUrl ? '' : 'Diagram source. Rendered as an image in the visuals step.')}
           </p>
+        </div>
+      )
+    case 'GRAPH':
+      return (
+        <div className="flex h-full flex-col justify-center gap-3">
+          <FrameHeading>{scene.onScreen.heading}</FrameHeading>
+          {diagramUrl ? (
+            <div className="relative min-h-0 flex-1">
+              <AssetImage src={diagramUrl} alt={scene.onScreen.heading} />
+            </div>
+          ) : (
+            /* Drawn here from the formula; the SVG is built from numbers and escaped labels only. */
+            <div
+              className="min-h-0 flex-1 rounded-md p-2 [&_svg]:h-full [&_svg]:w-full"
+              style={{ background: GRAPH_THEME.background }}
+              dangerouslySetInnerHTML={{ __html: renderGraphSvg(scene.onScreen, GRAPH_THEME) }}
+            />
+          )}
+          {scene.onScreen.caption ? <p className="text-xs text-muted-foreground">{scene.onScreen.caption}</p> : null}
         </div>
       )
     case 'CODE_WALKTHROUGH':

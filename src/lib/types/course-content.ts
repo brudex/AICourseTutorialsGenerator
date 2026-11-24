@@ -29,6 +29,7 @@ import { z } from 'zod'
 import { AssessmentDifficulty, AssessmentType, ExerciseLevel, SceneType } from '@/generated/prisma'
 
 import { audienceProfileSchema } from './audience'
+import { expressionError } from '@/lib/math/expression'
 
 /* Upper bounds keep a runaway generation (or a hostile paste) from writing
  * megabytes into a single Json cell. */
@@ -686,6 +687,42 @@ export const sceneSchema = z.discriminatedUnion('type', [
       /* What the picture shows (people, place, objects, action), written for an
        * image model; the Illustrator adds the house style. No text in images. */
       prompt: z.string().min(10).max(1_500),
+      caption: z.string().max(200).nullable(),
+    }),
+  }),
+  z.object({
+    type: z.literal(SceneType.GRAPH),
+    ...sceneCommon,
+    onScreen: z.object({
+      heading,
+      xLabel: z.string().max(40).nullable(),
+      yLabel: z.string().max(40).nullable(),
+      xMin: z.number(),
+      xMax: z.number(),
+      /* null: fitted to the curves. */
+      yMin: z.number().nullable(),
+      yMax: z.number().nullable(),
+      curves: z
+        .array(
+          z.object({
+            /* A formula in x, e.g. "(x^2 - 4)/(x - 2)" — drawn by src/lib/math/graph.ts, never run as code. */
+            expression: z
+              .string()
+              .min(1)
+              .max(200)
+              .superRefine((value, ctx) => {
+                const error = expressionError(value)
+                if (error) ctx.addIssue({ code: 'custom', message: `Formula does not parse: ${error}` })
+              }),
+            label: z.string().max(60).nullable(),
+          })
+        )
+        .min(1)
+        .max(4),
+      /* open: a hole (an open circle where the function is not defined). */
+      points: z.array(z.object({ x: z.number(), y: z.number(), label: z.string().max(40).nullable(), open: z.boolean() })).max(8),
+      /* Dashed lines: axis "x" is the vertical line x = value, "y" the horizontal line y = value. */
+      guides: z.array(z.object({ axis: z.enum(['x', 'y']), value: z.number(), label: z.string().max(40).nullable() })).max(4),
       caption: z.string().max(200).nullable(),
     }),
   }),

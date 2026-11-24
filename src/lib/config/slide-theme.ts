@@ -34,6 +34,17 @@ export const SLIDE_THEME = {
   codeTheme: 'github-dark-default',
 } as const
 
+/* GRAPH scenes (src/lib/math/graph.ts) in the slide palette. */
+export const GRAPH_THEME = {
+  background: SLIDE_THEME.background,
+  text: SLIDE_THEME.text,
+  mutedText: SLIDE_THEME.mutedText,
+  grid: SLIDE_THEME.border,
+  axis: SLIDE_THEME.mutedText,
+  curveColors: ['#60a5fa', SLIDE_THEME.success, '#fbbf24', SLIDE_THEME.danger],
+  fontFamily: SLIDE_THEME.fontSans,
+} as const
+
 /* Mermaid's "base" theme driven by the slide palette, so diagrams sit on the
  * slide background without a white box. */
 export const MERMAID_THEME_VARIABLES = {

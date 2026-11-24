@@ -27,7 +27,8 @@ import { z } from 'zod'
 
 import { AiCapability, AssetKind, SceneType } from '@/generated/prisma'
 import { prisma } from '@/lib/config'
-import { SLIDE_SIZE } from '@/lib/config/slide-theme'
+import { GRAPH_THEME, SLIDE_SIZE } from '@/lib/config/slide-theme'
+import { renderGraphSvg } from '@/lib/math/graph'
 import { courseBriefSchema, sceneSchema, type AgentDefinition, type Scene } from '@/lib/types'
 import { DEFAULT_LEARNER_LEVEL, learnerLevelGuide } from '@/lib/config/learner-levels'
 import { generateStructured, hasRouteFor } from '@/lib/ai'
@@ -139,6 +140,8 @@ export const visualRendererAgent: AgentDefinition = {
         if (diagram.error) failedDiagrams++
         if (diagram.source !== scene.onScreen.mermaid) scene = { ...scene, onScreen: { ...scene.onScreen, mermaid: diagram.source } }
       }
+      /* GRAPH: the plotted curves, stored like a diagram so the notes show them too. */
+      if (scene.type === SceneType.GRAPH) diagramSvg = renderGraphSvg(scene.onScreen, GRAPH_THEME)
 
       const keyBase = { organizationId: job.organizationId, courseId: job.courseId, lessonId, sceneId: row.id }
 

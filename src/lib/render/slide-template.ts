@@ -23,7 +23,8 @@ import 'server-only'
 
 import { escapeHtml, highlightCodeHtml } from './html'
 
-import { SLIDE_SIZE, SLIDE_THEME as T } from '@/lib/config/slide-theme'
+import { GRAPH_THEME, SLIDE_SIZE, SLIDE_THEME as T } from '@/lib/config/slide-theme'
+import { renderGraphSvg } from '@/lib/math/graph'
 import type { Scene } from '@/lib/types'
 
 export interface SlideRenderInput {
@@ -84,6 +85,10 @@ async function body(input: SlideRenderInput): Promise<string> {
     case 'DIAGRAM':
       return `<div class="stack fill">${heading(scene.onScreen.heading, 56)}
         <div class="diagram" style="height:640px">${input.diagramSvg ?? `<p class="sub">Diagram unavailable</p>`}</div>
+        ${scene.onScreen.caption ? `<p class="sub" style="font-size:28px">${esc(scene.onScreen.caption)}</p>` : ''}</div>`
+    case 'GRAPH':
+      return `<div class="stack fill">${heading(scene.onScreen.heading, 56)}
+        <div class="diagram" style="height:680px">${input.diagramSvg ?? renderGraphSvg(scene.onScreen, GRAPH_THEME)}</div>
         ${scene.onScreen.caption ? `<p class="sub" style="font-size:28px">${esc(scene.onScreen.caption)}</p>` : ''}</div>`
     case 'CODE_WALKTHROUGH': {
       const html = await highlightCode(

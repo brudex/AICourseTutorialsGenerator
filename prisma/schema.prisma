@@ -661,6 +661,8 @@ enum SceneType {
   EXERCISE_PROMPT
   QUIZ_BREAK
   ILLUSTRATION
+  /// A plotted function graph (maths, science, economics): drawn, never shown as code.
+  GRAPH
 }
 
 /// LessonScene — one scene of a lesson's video script, owned by a

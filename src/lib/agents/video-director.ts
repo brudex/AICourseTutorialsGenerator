@@ -42,7 +42,7 @@ function illustrationRange(context: { lesson: { kind: LessonKind }; brief: Cours
 
 export const videoDirectorAgent = defineAgent({
   name: 'Video Director',
-  description: 'Writes the lecture video: scenes, spoken narration, diagrams, code walkthroughs, demos',
+  description: 'Writes the lecture video: scenes, spoken narration, diagrams, graphs, code walkthroughs, demos',
   capability: AiCapability.STRONG_REASONING,
   inputSchema: lessonAgentInputSchema,
   outputSchema: sceneScriptSchema,
@@ -83,12 +83,13 @@ export const videoDirectorAgent = defineAgent({
           '',
           'TEACHING ARC',
           'For each important idea, use the stages that genuinely help (not all of them every time):',
-          'hook (a question, problem or short story), explain (plain words first), show (a diagram, picture or code), demonstrate (a worked or live example), reinforce (the key takeaway or a common mistake), apply (a small task or quick question).',
+          'hook (a question, problem or short story), explain (plain words first), show (a diagram, graph, picture or code), demonstrate (a worked or live example), reinforce (the key takeaway or a common mistake), apply (a small task or quick question).',
           '',
           'SCENE TYPES',
           '- TITLE_CARD: the lesson title and, as the subtitle, what the learner will be able to do. Always the first scene.',
           '- TALKING_POINTS: a specific heading and 1 to 5 short bullets that appear as the narration reaches them.',
           '- DIAGRAM: valid Mermaid source (flowchart, sequenceDiagram, stateDiagram, classDiagram, or graph) for processes, flows, structures and relationships; keep it small and labels short. Write one statement per line with real line breaks (never `;` or `<br>` between statements). Wrap labels containing ( ) [ ] : # & or line breaks in double quotes, e.g. A["Profit (loss)"]. Every subgraph needs a name. No style, classDef, class or click lines: the slide theme colours the diagram.',
+          '- GRAPH: a plotted function for maths, science, economics or statistics, drawn for the learner exactly as a plotting tool would. Each `curves[].expression` is a formula in x using + - * / ^, brackets, pi, e and sin, cos, tan, sqrt, abs, exp, ln, log (base 10); write multiplication explicitly (2*x) and put function arguments in brackets, e.g. "(x^2 - 4)/(x - 2)" or "sin(x)/x". Set xMin and xMax around the interesting part; leave yMin and yMax null to fit the curve. `points` mark key values, with `open: true` for a hole where the function is undefined (x = 2 for the example above). `guides` are dashed lines: axis "x" for x = a, axis "y" for y = L (a limit or asymptote).',
           '- CODE_WALKTHROUGH: complete code plus steps that highlight line ranges (1-based, within the code) while the narration explains what each part does and why.',
           '- CODE_TYPING: a live demo where `typedCode` is typed into `fileName` (after `initialCode`); `result` is what running it shows and must follow exactly from that code.',
           '- COMPARISON: two columns such as wrong vs right, before vs after, manual vs automated; the narration explains why the difference matters.',
@@ -104,7 +105,7 @@ export const videoDirectorAgent = defineAgent({
           '',
           'DIRECTING',
           '- One idea per scene. Keep each scene’s narration to about 2 to 4 short sentences (roughly 20 to 30 seconds, never more than about 80 words); when there is more to say, start a new scene with its own visual.',
-          '- Choose the scene type by what explains the idea best: DIAGRAM for processes and relationships, CODE_WALKTHROUGH to explain code, CODE_TYPING to build it, COMPARISON for contrasts, ILLUSTRATION for real people, places and situations, TALKING_POINTS for a short structure.',
+          '- Choose the scene type by what explains the idea best: DIAGRAM for processes and relationships, GRAPH for functions, curves, limits, rates and trends, CODE_WALKTHROUGH to explain code, CODE_TYPING to build it, COMPARISON for contrasts, ILLUSTRATION for real people, places and situations, TALKING_POINTS for a short structure.',
           '- The narration and the screen cover the same idea at the same moment; never show something before it is introduced.',
           '- Vary the visuals; never more than two TALKING_POINTS scenes in a row.',
           '- The screen shows keywords, diagrams and code; the voice explains. Never put a paragraph or the narration itself on screen.',
@@ -112,10 +113,10 @@ export const videoDirectorAgent = defineAgent({
           ...(context.canIllustrate
             ? [
                 `- Include ${illustrationRange(context)} ILLUSTRATION scenes (never more than ${MAX_ILLUSTRATIONS_PER_LESSON}). Each must show something the narration is talking about: the opening hook or story, a real world example, or the people, places, objects or situations being described (for example a trader recording a sale, a busy market, a map lesson outdoors). Add them even when the lesson has no illustration request, but never as decoration.`,
-                '- Turn each illustration request into a scene: a DIAGRAM for processes, flows, structures and relationships; an ILLUSTRATION for real people, places, objects or situations.',
+                '- Turn each illustration request into a scene: a GRAPH for plotted functions and curves; a DIAGRAM for processes, flows, structures and relationships; an ILLUSTRATION for real people, places, objects or situations.',
                 '- In ILLUSTRATION prompts, show people and settings that match the course’s audience and region from the brief, and keep the picture free of any writing.',
               ]
-            : ['- Turn each illustration request into a DIAGRAM or COMPARISON scene. Do not use ILLUSTRATION scenes.']),
+            : ['- Turn each illustration request into a GRAPH (plotted functions and curves), DIAGRAM or COMPARISON scene. Do not use ILLUSTRATION scenes.']),
           '',
           'NARRATION',
           '- Written for the ear: conversational, warm and confident, speaking to the learner as "you", in short connected sentences. No markdown.',
@@ -127,6 +128,7 @@ export const videoDirectorAgent = defineAgent({
           '',
           'ACCURACY',
           '- The written lesson is the source of truth. Keep its meaning; do not invent facts, figures, APIs, features or results. Explain hard ideas instead of dropping them.',
+          '- Code is on screen only when writing code is part of what this course teaches (a programming, data or software course, or a brief that asks for it). In any other course (for example maths, science, business), never show code: when the lesson uses code to draw a graph or chart (matplotlib, numpy, Excel formulas), show the picture itself (a GRAPH for a plotted function, otherwise a DIAGRAM or COMPARISON) and narrate what it shows, not how it was programmed.',
           '- Use the lesson’s code samples for code scenes, unchanged, so on-screen code matches the downloads. Highlight ranges must point at real lines.',
           '- Never claim code produces output it would not produce.',
           '',
@@ -162,7 +164,7 @@ export const videoDirectorAgent = defineAgent({
               ]),
           '',
           'BEFORE RETURNING, CHECK',
-          'First scene TITLE_CARD and last scene SUMMARY; every scene has one teaching purpose and matches its type’s fields; narration and screen are in sync; the lesson’s key ideas are all covered; on-screen text is within limits; code and line ranges are exact; Mermaid is valid; quiz answers and explanations agree; no invented facts; the requested language is used throughout.',
+          'First scene TITLE_CARD and last scene SUMMARY; every scene has one teaching purpose and matches its type’s fields; narration and screen are in sync; the lesson’s key ideas are all covered; on-screen text is within limits; code appears only if the course teaches code, and code and line ranges are exact; GRAPH formulas match the lesson’s maths; Mermaid is valid; quiz answers and explanations agree; no invented facts; the requested language is used throughout.',
         ].join('\n'),
       },
       {

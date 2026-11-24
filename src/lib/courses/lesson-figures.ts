@@ -55,7 +55,7 @@ export async function loadLessonFigures(db: DbClient, courseId: string): Promise
         if (scene.type === 'ILLUSTRATION' && scene.imageAsset) {
           const object = await storage.get(scene.imageAsset.storageKey)
           if (object) list.push({ kind: 'illustration', src: await illustrationDataUrl(object.body), caption })
-        } else if (scene.type === 'DIAGRAM' && scene.diagramAsset) {
+        } else if ((scene.type === 'DIAGRAM' || scene.type === 'GRAPH') && scene.diagramAsset) {
           const object = await storage.get(scene.diagramAsset.storageKey)
           if (object) list.push({ kind: 'diagram', src: `data:image/svg+xml;base64,${Buffer.from(object.body).toString('base64')}`, caption })
         }
