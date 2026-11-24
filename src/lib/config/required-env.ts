@@ -26,7 +26,6 @@
  *        src/components/global/setup-checklist.tsx.
  */
 
-import { PLAN_ORDER, PLANS, isPaidPlan } from './plans'
 import { AUTH_PROVIDER } from '@/lib/adapters/provider'
 
 export interface RequiredEnvVar {
@@ -168,19 +167,6 @@ export interface OptionalEnvVar {
   /** Optional walkthrough video (same shape as RequiredEnvVar.video). */
   video?: { url: string; label?: string }
 }
-
-/* Per-plan Stripe price-id keys, DERIVED from the plan source of truth so the
- * labels follow the (env-driven) plan names and the key list never duplicates
- * PLAN_ORDER. `free` has no price; the env-var name follows plans.ts' fixed
- * `NEXT_PUBLIC_<PLANKEY>_PRICE_<INTERVAL>` convention. Marked optional: you only
- * need a price for the plans you actually sell. */
-const STRIPE_PRICE_KEYS: OptionalEnvKey[] = PLAN_ORDER.filter(isPaidPlan).flatMap((plan) =>
-  (['monthly', 'yearly'] as const).map((interval) => ({
-    key: `NEXT_PUBLIC_${plan.toUpperCase()}_PRICE_${interval.toUpperCase()}`,
-    label: `${PLANS[plan].name} price (${interval})`,
-    optional: true,
-  }))
-)
 
 /* Fail-soft integrations. Adding one here surfaces it on the setup checklist as
  * an informational row; it NEVER affects hasMissingRequiredEnv (never blocks).

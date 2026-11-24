@@ -20,7 +20,7 @@
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronsUpDown, CreditCardIcon, LogOut, UserIcon, ShieldCheckIcon } from 'lucide-react'
+import { ChevronsUpDown, LogOut, UserIcon, ShieldCheckIcon } from 'lucide-react'
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
@@ -39,9 +39,6 @@ import {
 import { authClient } from '@/lib/better-auth/auth-client'
 import { AUTH_ROUTES, PORTAL_PATH, ROUTES } from '@/lib/config'
 import { trpc } from '@/trpc/react-provider'
-import { useActiveOrganization } from '@/hooks/use-active-organization'
-import { permissions } from '@/lib/permissions'
-import { RESOURCES } from '@/lib/resources'
 import { initialsOf } from '@/lib/utils'
 import { SidebarEntrySkeleton } from '../sidebar-skeletons'
 
@@ -49,7 +46,6 @@ export function NavUser() {
   const { isMobile } = useSidebar()
   const router = useRouter()
   const [signingOut, setSigningOut] = React.useState(false)
-  const { hasPermission } = useActiveOrganization()
   /* Profile is prefetched + hydrated by the dashboard/portal layout, so this
    * resolves from cache on first render (no flicker, no client round-trip). */
   const { data: user } = trpc.user.getProfile.useQuery(undefined, {
